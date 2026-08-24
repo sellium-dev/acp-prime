@@ -48,6 +48,18 @@ la que no pertenece.
    segunda empresa (lazos) cuando llegue el momento — mismo patrón, sin tocar
    nada más.
 
+## Migraciones
+
+`supabase/schema.sql` es el esquema base (ya aplicado). Los cambios
+posteriores viven en `supabase/migrations/`, numerados en orden — se corren
+una sola vez cada uno, pegándolos en el SQL Editor, sin borrar nada de lo
+que ya existe.
+
+- **`001`** (dentro de `schema.sql`): organizaciones, membresías, productos,
+  variantes, ventas.
+- **`002_costos_y_gastos.sql`**: agrega costo del producto (para calcular
+  inversión y ganancia), costo congelado por venta, y una tabla de gastos.
+
 ## Variables de entorno del frontend
 
 El frontend necesita solo dos datos públicos (no hay backend propio, así que

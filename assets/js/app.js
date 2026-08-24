@@ -1,14 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { renderProductos } from './screens/productos.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
 
-const NAV_ITEMS = [
-	{ id: 'ventas', label: 'Ventas' },
-	{ id: 'productos', label: 'Productos' },
-	{ id: 'configuracion', label: 'Configuración' },
-];
+function navItemsFor( role ) {
+	const items = [ { id: 'ventas', label: 'Ventas' } ];
+	if ( 'administrador' === role ) {
+		items.push( { id: 'productos', label: 'Productos' } );
+	}
+	items.push( { id: 'configuracion', label: 'Configuración' } );
+	return items;
+}
 
 let state = {
 	screen: 'loading', // loading | login | org-select | app
@@ -214,7 +218,7 @@ function renderApp() {
 				</div>
 				<div class="acp-sidebar__org">${ escapeHtml( m.organizations.name ) }</div>
 				<nav class="acp-nav">
-					${ NAV_ITEMS.map(
+					${ navItemsFor( m.role ).map(
 						( item ) => `
 						<button type="button" class="acp-nav__item ${ item.id === state.activeNav ? 'is-active' : '' }" data-nav="${ item.id }">
 							${ item.label }
@@ -259,6 +263,14 @@ function renderApp() {
 
 function renderMain() {
 	const main = document.getElementById( 'acp-main' );
+	const m = state.activeMembership;
+	const ctx = { supabase, org: m.organizations, isAdmin: 'administrador' === m.role };
+
+	if ( 'productos' === state.activeNav && ctx.isAdmin ) {
+		renderProductos( main, ctx );
+		return;
+	}
+
 	const labels = { ventas: 'Ventas', productos: 'Productos', configuracion: 'Configuración' };
 	main.innerHTML = `
 		<div style="margin-bottom:24px">
