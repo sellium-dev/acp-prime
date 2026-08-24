@@ -8,21 +8,17 @@ import { renderProductos } from './screens/productos.js?v=2';
 import { renderVentas } from './screens/ventas.js?v=4';
 import { renderDashboard } from './screens/dashboard.js?v=3';
 import { renderConfiguracion } from './screens/configuracion.js?v=1';
-import { renderGastos } from './screens/gastos.js?v=2';
+import { renderGastos } from './screens/gastos.js?v=3';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
 
 function navItemsFor( role ) {
-	const items = [];
-	if ( 'administrador' === role ) {
-		items.push( { id: 'dashboard', label: 'Dashboard' } );
-	}
-	items.push( { id: 'ventas', label: 'Ventas' } );
+	const items = [ { id: 'dashboard', label: 'Dashboard' }, { id: 'ventas', label: 'Ventas' } ];
 	if ( 'administrador' === role ) {
 		items.push( { id: 'productos', label: 'Productos' } );
-		items.push( { id: 'gastos', label: 'Gastos' } );
 	}
+	items.push( { id: 'gastos', label: 'Gastos' } );
 	items.push( { id: 'configuracion', label: 'Configuración' } );
 	return items;
 }
@@ -70,7 +66,7 @@ async function loadMemberships( userId ) {
 	// hizo más lento el login recién.
 	const { data, error } = await supabase
 		.from( 'memberships' )
-		.select( 'id, role, full_name, organization_id, organizations ( id, name, slug )' )
+		.select( 'id, user_id, role, full_name, organization_id, organizations ( id, name, slug )' )
 		.eq( 'user_id', userId );
 
 	if ( error ) {
@@ -314,7 +310,7 @@ function renderMain() {
 		navParams: state.navParams,
 	};
 
-	if ( 'dashboard' === state.activeNav && ctx.isAdmin ) {
+	if ( 'dashboard' === state.activeNav ) {
 		renderDashboard( main, ctx );
 		return;
 	}
@@ -324,7 +320,7 @@ function renderMain() {
 		return;
 	}
 
-	if ( 'gastos' === state.activeNav && ctx.isAdmin ) {
+	if ( 'gastos' === state.activeNav ) {
 		renderGastos( main, ctx );
 		return;
 	}

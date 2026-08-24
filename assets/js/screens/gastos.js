@@ -1,5 +1,5 @@
 export function renderGastos( main, ctx ) {
-	const { supabase, org } = ctx;
+	const { supabase, org, membership } = ctx;
 	let range = 'mes'; // 'mes' | 'todos'
 	let expenses = [];
 	let saving = false;
@@ -123,6 +123,7 @@ export function renderGastos( main, ctx ) {
 			amount,
 			category: category || null,
 			expense_date: expenseDate,
+			created_by: membership.user_id,
 		} );
 
 		saving = false;
