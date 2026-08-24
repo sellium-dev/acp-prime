@@ -114,11 +114,10 @@ export function renderProductos( main, ctx ) {
 				</div>
 				<div class="acp-field">
 					<label>Categoría</label>
-					<select id="p-category" style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:15px;font-family:inherit">
-						${ CATEGORIES.map(
-							( c ) => `<option value="${ escAttr( c ) }" ${ editingProduct?.category === c ? 'selected' : '' }>${ esc( c ) }</option>`
-						).join( '' ) }
-					</select>
+					<input id="p-category" list="p-category-options" placeholder="Elige una o escribe una nueva" value="${ escAttr( editingProduct?.category || '' ) }" />
+					<datalist id="p-category-options">
+						${ CATEGORIES.map( ( c ) => `<option value="${ escAttr( c ) }">` ).join( '' ) }
+					</datalist>
 				</div>
 				<div class="acp-field">
 					<label>Descripción (opcional)</label>
@@ -154,7 +153,7 @@ export function renderProductos( main, ctx ) {
 		wrap.innerHTML = formVariants
 			.map(
 				( v, i ) => `
-			<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;margin-bottom:8px;align-items:center" data-row="${ i }">
+			<div style="display:grid;grid-template-columns:repeat(5, minmax(0, 1fr)) auto;gap:8px;margin-bottom:8px;align-items:center" data-row="${ i }">
 				<input placeholder="Talla" class="v-size" value="${ escAttr( v.size ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 				<input placeholder="Color" class="v-color" value="${ escAttr( v.color || '' ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 				<input placeholder="Costo" class="v-cost" type="number" step="0.01" value="${ escAttr( v.cost ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />

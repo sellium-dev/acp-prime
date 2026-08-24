@@ -62,7 +62,7 @@ export function renderVentas( main, ctx ) {
 			${ errorMsg ? `<div class="acp-error">${ esc( errorMsg ) }</div>` : '' }
 			${ successMsg ? `<div class="acp-error" style="background:oklch(0.72 0.16 152 / 0.12);border-color:oklch(0.72 0.16 152 / 0.35);color:oklch(0.72 0.16 152)">${ esc( successMsg ) }</div>` : '' }
 
-			<div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px;align-items:start;margin-bottom:28px">
+			<div class="acp-ventas-grid">
 				<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px">
 					<div style="font-size:14px;font-weight:700;margin-bottom:12px">Buscar producto</div>
 					<input id="v-search" placeholder="Nombre del producto…" value="${ escAttr( search ) }"
