@@ -123,11 +123,12 @@ async function loadMemberships( userId ) {
 
 function selectMembership( membership, allMemberships ) {
 	sessionStorage.setItem( 'acp_prime_org_id', membership.organization_id );
+	const perms = permissionsFor( membership );
 	setState( {
 		screen: 'app',
 		memberships: allMemberships,
 		activeMembership: membership,
-		activeNav: 'administrador' === membership.role ? 'dashboard' : 'ventas',
+		activeNav: perms.canSeeDashboard ? 'dashboard' : 'ventas',
 	} );
 }
 
