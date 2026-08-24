@@ -6,7 +6,7 @@
 -- así que afectaba a TODOS los vendedores de esa empresa por igual. Ahora
 -- cada vendedor tiene su propio permiso, en su fila de membresía.
 alter table public.memberships
-  add column vendor_permissions jsonb not null default '{"dashboard": true, "gastos": true, "productos": false}'::jsonb;
+  add column if not exists vendor_permissions jsonb not null default '{"dashboard": true, "gastos": true, "productos": false}'::jsonb;
 
 -- Copia lo que ya tenía configurado la empresa a cada vendedor existente,
 -- para no perder lo que se haya cambiado desde que se corrió 005.
@@ -14,6 +14,12 @@ update public.memberships m
 set vendor_permissions = o.vendor_permissions
 from public.organizations o
 where m.organization_id = o.id and m.role = 'vendedor';
+
+-- Las políticas de productos/variantes de 005 usan org_allows_vendor(), así
+-- que hay que quitarlas ANTES de poder borrar esa función (si no, Postgres
+-- se queja de que todavía tienen una dependencia sobre ella).
+drop policy if exists "products_insert_admin_or_enabled_vendor" on public.products;
+drop policy if exists "variants_insert_admin_or_enabled_vendor" on public.product_variants;
 
 -- org_allows_vendor() leía el permiso de la empresa; se reemplaza por una
 -- función que lee el permiso de la membresía de quien está llamando.
@@ -38,14 +44,12 @@ $$;
 -- Productos / variantes: mismo criterio de 005 (insert = admin o vendedor
 -- habilitado; update/delete = siempre solo admin), ahora consultando el
 -- permiso de la persona en vez del de la empresa.
-drop policy if exists "products_insert_admin_or_enabled_vendor" on public.products;
 create policy "products_insert_admin_or_enabled_vendor" on public.products
   for insert with check (
     public.is_org_admin( organization_id )
     or ( public.is_org_member( organization_id ) and public.member_allows_vendor( organization_id, 'productos' ) )
   );
 
-drop policy if exists "variants_insert_admin_or_enabled_vendor" on public.product_variants;
 create policy "variants_insert_admin_or_enabled_vendor" on public.product_variants
   for insert with check (
     public.is_org_admin( organization_id )
