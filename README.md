@@ -59,6 +59,9 @@ que ya existe.
   variantes, ventas.
 - **`002_costos_y_gastos.sql`**: agrega costo del producto (para calcular
   inversión y ganancia), costo congelado por venta, y una tabla de gastos.
+- **`003_registrar_venta.sql`**: función `register_sale()` que crea una
+  venta completa y descuenta stock de forma atómica (sin condiciones de
+  carrera entre vendedores); amplía a quién puede ver el roster de la empresa.
 
 ## Variables de entorno del frontend
 
