@@ -137,6 +137,7 @@ export function renderProductos( main, ctx ) {
 		wireCategoryField();
 
 		document.getElementById( 'p-add-variant' ).addEventListener( 'click', () => {
+			syncFormVariantsFromDom();
 			formVariants.push( emptyVariant() );
 			drawVariantRows();
 		} );
@@ -199,6 +200,7 @@ export function renderProductos( main, ctx ) {
 
 		wrap.querySelectorAll( '.v-remove' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => {
+				syncFormVariantsFromDom();
 				const i = Number( btn.closest( '[data-row]' ).dataset.row );
 				formVariants.splice( i, 1 );
 				if ( 0 === formVariants.length ) {
@@ -206,6 +208,24 @@ export function renderProductos( main, ctx ) {
 				}
 				drawVariantRows();
 			} );
+		} );
+	}
+
+	// Lo que el usuario ya tecleó en los inputs vive solo en el DOM hasta que
+	// se guarda — si redibujamos las filas (agregar/quitar variante) sin
+	// copiar esos valores de vuelta a formVariants primero, se pierden.
+	function syncFormVariantsFromDom() {
+		const rows = document.querySelectorAll( '#p-variants [data-row]' );
+		rows.forEach( ( row, i ) => {
+			if ( ! formVariants[ i ] ) return;
+			formVariants[ i ] = {
+				...formVariants[ i ],
+				size: row.querySelector( '.v-size' ).value,
+				color: row.querySelector( '.v-color' ).value,
+				cost: row.querySelector( '.v-cost' ).value,
+				price: row.querySelector( '.v-price' ).value,
+				stock_quantity: row.querySelector( '.v-stock' ).value,
+			};
 		} );
 	}
 
