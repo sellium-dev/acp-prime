@@ -158,7 +158,7 @@ function renderLogin() {
 				<form id="acp-login-form">
 					<div class="acp-field">
 						<label for="acp-email">Correo</label>
-						<input type="email" id="acp-email" required autocomplete="username" />
+						<input type="email" id="acp-email" required autocomplete="username" value="${ escapeHtml( localStorage.getItem( 'acp_prime_last_email' ) || '' ) }" />
 					</div>
 					<div class="acp-field">
 						<label for="acp-pin">PIN</label>
@@ -185,8 +185,15 @@ function renderLogin() {
 		e.preventDefault();
 		const email = document.getElementById( 'acp-email' ).value.trim();
 		const pin = pinInput.value;
+		localStorage.setItem( 'acp_prime_last_email', email );
 		handleLogin( email, pin );
 	} );
+
+	// Si ya hay un correo guardado, el foco va directo al PIN — no hace
+	// falta tocar el campo de correo para volver a entrar.
+	if ( localStorage.getItem( 'acp_prime_last_email' ) ) {
+		pinInput.focus();
+	}
 }
 
 function renderOrgSelect() {
