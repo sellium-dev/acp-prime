@@ -213,13 +213,17 @@ export function renderVentas( main, ctx ) {
 
 	async function handleSubmit() {
 		if ( 0 === cart.length ) return;
+
+		// Hay que leer el input ANTES de volver a dibujar — draw() reconstruye
+		// el campo de Cliente desde cero (sin recordar lo tecleado), así que
+		// si se lee después, siempre llega vacío.
+		const customerName = document.getElementById( 'v-customer' )?.value.trim() || '';
+		const items = cart.map( ( c ) => ( { variant_id: c.variantId, quantity: c.qty } ) );
+
 		saving = true;
 		errorMsg = '';
 		successMsg = '';
 		draw();
-
-		const customerName = document.getElementById( 'v-customer' )?.value.trim() || '';
-		const items = cart.map( ( c ) => ( { variant_id: c.variantId, quantity: c.qty } ) );
 
 		const { error } = await supabase.rpc( 'register_sale', {
 			p_organization_id: org.id,
