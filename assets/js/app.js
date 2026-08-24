@@ -55,21 +55,23 @@ async function init() {
 		setState( { screen: 'login' } );
 		return;
 	}
-	await loadMemberships();
+	await loadMemberships( data.session.user.id );
 }
 
-async function loadMemberships() {
+async function loadMemberships( userId ) {
 	// Ojo: la tabla memberships tiene una regla de seguridad que deja ver a
 	// CUALQUIER miembro de una empresa el resto del equipo de esa empresa
 	// (para el listado de usuarios en Configuración) — sin este filtro por
 	// user_id, esta consulta trae también las filas de otros compañeros que
 	// comparten empresa, y el selector de empresas termina mostrando
-	// entradas de más (el mismo nombre de empresa "duplicado").
-	const { data: userData } = await supabase.auth.getUser();
+	// entradas de más (el mismo nombre de empresa "duplicado"). El userId
+	// se pasa desde afuera (ya lo tenemos de getSession()/signIn()) para no
+	// pagar una llamada de red extra a auth.getUser() acá — eso fue lo que
+	// hizo más lento el login recién.
 	const { data, error } = await supabase
 		.from( 'memberships' )
 		.select( 'id, role, full_name, organization_id, organizations ( id, name, slug )' )
-		.eq( 'user_id', userData.user.id );
+		.eq( 'user_id', userId );
 
 	if ( error ) {
 		setState( { screen: 'login', loginError: 'No se pudo cargar tu cuenta: ' + error.message } );
@@ -112,13 +114,13 @@ function selectMembership( membership, allMemberships ) {
 
 async function handleLogin( email, pin ) {
 	setState( { loginBusy: true, loginError: '' } );
-	const { error } = await supabase.auth.signInWithPassword( { email, password: pin } );
+	const { data, error } = await supabase.auth.signInWithPassword( { email, password: pin } );
 	if ( error ) {
 		setState( { loginBusy: false, loginError: 'Correo o PIN incorrecto.' } );
 		return;
 	}
 	setState( { loginBusy: false } );
-	await loadMemberships();
+	await loadMemberships( data.user.id );
 }
 
 async function handleLogout() {
@@ -166,11 +168,11 @@ function renderLogin() {
 				<form id="acp-login-form">
 					<div class="acp-field">
 						<label for="acp-email">Correo</label>
-						<input type="email" id="acp-email" required autocomplete="username" value="${ escapeHtml( localStorage.getItem( 'acp_prime_last_email' ) || '' ) }" />
+						<input type="email" id="acp-email" required autocomplete="username" ${ state.loginBusy ? 'disabled' : '' } value="${ escapeHtml( localStorage.getItem( 'acp_prime_last_email' ) || '' ) }" />
 					</div>
 					<div class="acp-field">
 						<label for="acp-pin">PIN</label>
-						<input type="password" id="acp-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autocomplete="current-password" />
+						<input type="password" id="acp-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autocomplete="current-password" ${ state.loginBusy ? 'disabled' : '' } />
 					</div>
 					<button type="submit" class="acp-btn-primary" ${ state.loginBusy ? 'disabled' : '' }>
 						${
