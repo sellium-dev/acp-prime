@@ -63,6 +63,30 @@
 	margin-bottom: 16px;
 }
 
+.acp-suggestions {
+	position: absolute;
+	top: 100%;
+	left: 0;
+	right: 0;
+	margin-top: 4px;
+	background: var(--bg-elev, var(--card));
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	overflow: hidden;
+	z-index: 20;
+	box-shadow: 0 8px 24px oklch(0 0 0 / 0.35);
+}
+
+.acp-suggestion-item {
+	padding: 10px 14px;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.acp-suggestion-item:hover {
+	background: var(--input-bg);
+}
+
 .acp-field label {
 	font-size: 12px;
 	font-weight: 600;

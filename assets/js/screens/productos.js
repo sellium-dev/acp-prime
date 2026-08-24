@@ -112,12 +112,10 @@ export function renderProductos( main, ctx ) {
 					<label>Nombre</label>
 					<input id="p-name" value="${ escAttr( editingProduct?.name || '' ) }" />
 				</div>
-				<div class="acp-field">
+				<div class="acp-field" style="position:relative">
 					<label>Categoría</label>
-					<input id="p-category" list="p-category-options" placeholder="Elige una o escribe una nueva" value="${ escAttr( editingProduct?.category || '' ) }" />
-					<datalist id="p-category-options">
-						${ CATEGORIES.map( ( c ) => `<option value="${ escAttr( c ) }">` ).join( '' ) }
-					</datalist>
+					<input id="p-category" autocomplete="off" placeholder="Elige una o escribe una nueva" value="${ escAttr( editingProduct?.category || '' ) }" />
+					<div id="p-category-suggestions" class="acp-suggestions" style="display:none"></div>
 				</div>
 				<div class="acp-field">
 					<label>Descripción (opcional)</label>
@@ -136,6 +134,7 @@ export function renderProductos( main, ctx ) {
 		`;
 
 		drawVariantRows();
+		wireCategoryField();
 
 		document.getElementById( 'p-add-variant' ).addEventListener( 'click', () => {
 			formVariants.push( emptyVariant() );
@@ -146,6 +145,39 @@ export function renderProductos( main, ctx ) {
 			draw();
 		} );
 		document.getElementById( 'p-save' ).addEventListener( 'click', handleSave );
+	}
+
+	function wireCategoryField() {
+		const input = document.getElementById( 'p-category' );
+		const list = document.getElementById( 'p-category-suggestions' );
+
+		function showSuggestions() {
+			const q = input.value.trim().toLowerCase();
+			const matches = CATEGORIES.filter( ( c ) => '' === q || c.toLowerCase().includes( q ) );
+			if ( 0 === matches.length ) {
+				list.style.display = 'none';
+				return;
+			}
+			list.innerHTML = matches
+				.map( ( c ) => `<div class="acp-suggestion-item" data-value="${ escAttr( c ) }">${ esc( c ) }</div>` )
+				.join( '' );
+			list.style.display = 'block';
+			list.querySelectorAll( '[data-value]' ).forEach( ( item ) => {
+				// mousedown (not click) fires before the input's blur, so the
+				// value gets set before the list disappears.
+				item.addEventListener( 'mousedown', ( e ) => {
+					e.preventDefault();
+					input.value = item.dataset.value;
+					list.style.display = 'none';
+				} );
+			} );
+		}
+
+		input.addEventListener( 'focus', showSuggestions );
+		input.addEventListener( 'input', showSuggestions );
+		input.addEventListener( 'blur', () => {
+			list.style.display = 'none';
+		} );
 	}
 
 	function drawVariantRows() {
