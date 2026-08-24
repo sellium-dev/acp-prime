@@ -1,0 +1,235 @@
+/* Layout y componentes propios de ACP Prime — los colores/variables base
+   vienen de tokens.css (mismo sistema visual que ACP Core). */
+
+.acp-center-screen {
+	min-height: 100vh;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+}
+
+.acp-login-card {
+	width: 100%;
+	max-width: 380px;
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	padding: 32px;
+}
+
+.acp-login-brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 24px;
+}
+
+.acp-login-mark {
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
+	background: var(--accent);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 800;
+	color: var(--accent-contrast);
+	font-size: 17px;
+	flex: 0 0 auto;
+}
+
+.acp-login-title {
+	font-size: 18px;
+	font-weight: 800;
+	letter-spacing: -0.01em;
+}
+
+.acp-field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 16px;
+}
+
+.acp-field label {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-3, var(--text-muted));
+}
+
+.acp-field input {
+	background: var(--input-bg);
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 12px 14px;
+	color: var(--text);
+	font-size: 15px;
+	font-family: inherit;
+	outline: none;
+}
+
+.acp-field input:focus {
+	border-color: var(--accent);
+}
+
+.acp-field input#acp-pin {
+	letter-spacing: 6px;
+	font-size: 20px;
+	text-align: center;
+}
+
+.acp-btn-primary {
+	width: 100%;
+	background: var(--accent);
+	color: var(--accent-contrast);
+	border: none;
+	border-radius: 10px;
+	padding: 13px;
+	font-size: 14px;
+	font-weight: 700;
+	font-family: inherit;
+	cursor: pointer;
+}
+
+.acp-btn-primary:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+.acp-btn-secondary {
+	width: 100%;
+	background: var(--btn-secondary-bg);
+	color: var(--text-2, var(--text));
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 12px;
+	font-size: 14px;
+	font-weight: 600;
+	font-family: inherit;
+	cursor: pointer;
+	text-align: left;
+}
+
+.acp-error {
+	background: oklch(0.65 0.18 25 / 0.12);
+	border: 1px solid oklch(0.65 0.18 25 / 0.35);
+	color: oklch(0.72 0.18 25);
+	border-radius: 10px;
+	padding: 10px 14px;
+	font-size: 13px;
+	margin-bottom: 16px;
+}
+
+/* ===== Shell de la app (post-login) ===== */
+
+.acp-shell {
+	display: flex;
+	min-height: 100vh;
+}
+
+.acp-sidebar {
+	width: 240px;
+	flex: 0 0 240px;
+	background: var(--bg-sub, var(--card));
+	border-right: 1px solid var(--border);
+	display: flex;
+	flex-direction: column;
+	padding: 20px 14px;
+	position: sticky;
+	top: 0;
+	height: 100vh;
+}
+
+.acp-sidebar__brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 8px 20px 8px;
+}
+
+.acp-sidebar__org {
+	font-size: 12px;
+	color: var(--text-muted);
+	padding: 0 8px 16px 8px;
+}
+
+.acp-nav {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.acp-nav__item {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 12px;
+	border-radius: 9px;
+	cursor: pointer;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--text-3, var(--text-muted));
+	background: transparent;
+	border: none;
+	text-align: left;
+	font-family: inherit;
+	width: 100%;
+}
+
+.acp-nav__item.is-active {
+	background: oklch(0.72 0.16 152 / 0.14);
+	color: var(--accent);
+}
+
+.acp-sidebar__spacer {
+	flex: 1;
+}
+
+.acp-sidebar__user {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 8px;
+	border-top: 1px solid var(--border);
+}
+
+.acp-sidebar__avatar {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	background: var(--input-bg);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 13px;
+	font-weight: 700;
+	flex: 0 0 auto;
+}
+
+.acp-sidebar__logout {
+	font-size: 12px;
+	color: var(--text-muted);
+	text-decoration: none;
+	cursor: pointer;
+	background: none;
+	border: none;
+	font-family: inherit;
+	padding: 0;
+}
+
+.acp-main {
+	flex: 1;
+	min-width: 0;
+	padding: 32px 40px;
+}
+
+.acp-empty-state {
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	padding: 40px;
+	text-align: center;
+	color: var(--text-muted);
+	font-size: 14px;
+}
