@@ -1,7 +1,11 @@
+// El "?v=" al final de cada import local es a propósito: los módulos ES se
+// cachean agresivo en el navegador y, sin esto, un cambio en el código puede
+// no reflejarse hasta hacer un refresco forzado (Ctrl+Shift+R). Se sube este
+// número cada vez que se toca alguno de estos archivos.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
-import { renderProductos } from './screens/productos.js';
-import { renderVentas } from './screens/ventas.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
+import { renderProductos } from './screens/productos.js?v=2';
+import { renderVentas } from './screens/ventas.js?v=2';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');

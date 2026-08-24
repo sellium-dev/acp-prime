@@ -4,6 +4,7 @@ export function renderProductos( main, ctx ) {
 	const { supabase, org, isAdmin } = ctx;
 	let view = 'list';
 	let products = [];
+	let search = '';
 	let editingProduct = null; // null = nuevo, objeto = editando
 	let formVariants = [];
 	let saving = false;
@@ -36,14 +37,18 @@ export function renderProductos( main, ctx ) {
 	}
 
 	function drawList() {
+		const filtered = filterProducts();
+
 		main.innerHTML = `
-			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
 				<div style="font-size:24px;font-weight:800;letter-spacing:-0.01em">Productos</div>
 				${ isAdmin ? '<button type="button" class="acp-btn-primary" style="width:auto;padding:10px 18px" id="acp-new-product">+ Nuevo producto</button>' : '' }
 			</div>
-			${ 0 === products.length ? '<div class="acp-empty-state">Todavía no hay productos cargados.</div>' : '' }
+			<input id="p-search" placeholder="Buscar por nombre…" value="${ escAttr( search ) }"
+				style="width:100%;max-width:360px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;font-family:inherit;outline:none;margin-bottom:20px" />
+			${ 0 === filtered.length ? `<div class="acp-empty-state">${ 0 === products.length ? 'Todavía no hay productos cargados.' : 'Sin resultados para esa búsqueda.' }</div>` : '' }
 			<div style="display:flex;flex-direction:column;gap:12px">
-				${ products.map( productCardHtml ).join( '' ) }
+				${ filtered.map( productCardHtml ).join( '' ) }
 			</div>
 		`;
 
@@ -57,6 +62,22 @@ export function renderProductos( main, ctx ) {
 				openForm( product );
 			} );
 		} );
+
+		const searchInput = document.getElementById( 'p-search' );
+		searchInput.addEventListener( 'input', () => {
+			search = searchInput.value;
+			const caret = searchInput.selectionStart;
+			draw();
+			const restored = document.getElementById( 'p-search' );
+			restored.focus();
+			restored.setSelectionRange( caret, caret );
+		} );
+	}
+
+	function filterProducts() {
+		if ( '' === search.trim() ) return products;
+		const q = search.trim().toLowerCase();
+		return products.filter( ( p ) => p.name.toLowerCase().includes( q ) );
 	}
 
 	function productCardHtml( product ) {
