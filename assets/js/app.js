@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { renderProductos } from './screens/productos.js';
+import { renderVentas } from './screens/ventas.js';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
@@ -264,10 +265,15 @@ function renderApp() {
 function renderMain() {
 	const main = document.getElementById( 'acp-main' );
 	const m = state.activeMembership;
-	const ctx = { supabase, org: m.organizations, isAdmin: 'administrador' === m.role };
+	const ctx = { supabase, org: m.organizations, isAdmin: 'administrador' === m.role, membership: m };
 
 	if ( 'productos' === state.activeNav && ctx.isAdmin ) {
 		renderProductos( main, ctx );
+		return;
+	}
+
+	if ( 'ventas' === state.activeNav ) {
+		renderVentas( main, ctx );
 		return;
 	}
 
