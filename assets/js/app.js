@@ -101,7 +101,13 @@ async function handleLogout() {
 
 function render() {
 	if ( 'loading' === state.screen ) {
-		root.innerHTML = '';
+		root.innerHTML = `
+			<div class="acp-center-screen">
+				<div class="acp-loading">
+					<img src="assets/img/loading.svg" alt="Cargando" width="96" height="96" />
+				</div>
+			</div>
+		`;
 		return;
 	}
 	if ( 'login' === state.screen ) {
@@ -134,7 +140,11 @@ function renderLogin() {
 						<input type="password" id="acp-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autocomplete="current-password" />
 					</div>
 					<button type="submit" class="acp-btn-primary" ${ state.loginBusy ? 'disabled' : '' }>
-						${ state.loginBusy ? 'Entrando…' : 'Entrar' }
+						${
+							state.loginBusy
+								? '<span style="display:inline-flex;align-items:center;gap:8px;justify-content:center"><img src="assets/img/loading.svg" alt="" width="20" height="20" /> Entrando…</span>'
+								: 'Entrar'
+						}
 					</button>
 				</form>
 			</div>

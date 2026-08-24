@@ -18,6 +18,17 @@
 	padding: 32px;
 }
 
+.acp-loading img {
+	display: block;
+	filter: drop-shadow(0 0 14px oklch(0.72 0.16 152 / 0.55)) drop-shadow(0 0 32px oklch(0.72 0.16 152 / 0.25));
+	animation: acp-loading-pulse 2s ease-in-out infinite;
+}
+
+@keyframes acp-loading-pulse {
+	0%, 100% { opacity: 0.85; }
+	50% { opacity: 1; }
+}
+
 .acp-login-brand {
 	display: flex;
 	align-items: center;
