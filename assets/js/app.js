@@ -59,9 +59,17 @@ async function init() {
 }
 
 async function loadMemberships() {
+	// Ojo: la tabla memberships tiene una regla de seguridad que deja ver a
+	// CUALQUIER miembro de una empresa el resto del equipo de esa empresa
+	// (para el listado de usuarios en Configuración) — sin este filtro por
+	// user_id, esta consulta trae también las filas de otros compañeros que
+	// comparten empresa, y el selector de empresas termina mostrando
+	// entradas de más (el mismo nombre de empresa "duplicado").
+	const { data: userData } = await supabase.auth.getUser();
 	const { data, error } = await supabase
 		.from( 'memberships' )
-		.select( 'id, role, full_name, organization_id, organizations ( id, name, slug )' );
+		.select( 'id, role, full_name, organization_id, organizations ( id, name, slug )' )
+		.eq( 'user_id', userData.user.id );
 
 	if ( error ) {
 		setState( { screen: 'login', loginError: 'No se pudo cargar tu cuenta: ' + error.message } );
