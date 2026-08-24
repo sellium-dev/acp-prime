@@ -6,12 +6,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
 import { renderProductos } from './screens/productos.js?v=2';
 import { renderVentas } from './screens/ventas.js?v=2';
+import { renderDashboard } from './screens/dashboard.js?v=1';
+import { renderConfiguracion } from './screens/configuracion.js?v=1';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
 
 function navItemsFor( role ) {
-	const items = [ { id: 'ventas', label: 'Ventas' } ];
+	const items = [];
+	if ( 'administrador' === role ) {
+		items.push( { id: 'dashboard', label: 'Dashboard' } );
+	}
+	items.push( { id: 'ventas', label: 'Ventas' } );
 	if ( 'administrador' === role ) {
 		items.push( { id: 'productos', label: 'Productos' } );
 	}
@@ -82,7 +88,7 @@ function selectMembership( membership, allMemberships ) {
 		screen: 'app',
 		memberships: allMemberships,
 		activeMembership: membership,
-		activeNav: 'ventas',
+		activeNav: 'administrador' === membership.role ? 'dashboard' : 'ventas',
 	} );
 }
 
@@ -271,6 +277,11 @@ function renderMain() {
 	const m = state.activeMembership;
 	const ctx = { supabase, org: m.organizations, isAdmin: 'administrador' === m.role, membership: m };
 
+	if ( 'dashboard' === state.activeNav && ctx.isAdmin ) {
+		renderDashboard( main, ctx );
+		return;
+	}
+
 	if ( 'productos' === state.activeNav && ctx.isAdmin ) {
 		renderProductos( main, ctx );
 		return;
@@ -281,13 +292,10 @@ function renderMain() {
 		return;
 	}
 
-	const labels = { ventas: 'Ventas', productos: 'Productos', configuracion: 'Configuración' };
-	main.innerHTML = `
-		<div style="margin-bottom:24px">
-			<div style="font-size:24px;font-weight:800;letter-spacing:-0.01em">${ labels[ state.activeNav ] }</div>
-		</div>
-		<div class="acp-empty-state">Esta sección todavía no está construida — próximo paso.</div>
-	`;
+	if ( 'configuracion' === state.activeNav ) {
+		renderConfiguracion( main, ctx );
+		return;
+	}
 }
 
 function escapeHtml( str ) {
