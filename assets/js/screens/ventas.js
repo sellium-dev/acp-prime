@@ -8,6 +8,7 @@ export function renderVentas( main, ctx ) {
 	let successMsg = '';
 	let sales = [];
 	let memberNames = new Map();
+	let range = 'mes' === ctx.navParams?.range ? 'mes' : 'hoy';
 
 	load();
 
@@ -34,15 +35,18 @@ export function renderVentas( main, ctx ) {
 	}
 
 	async function loadSales() {
-		const startOfDay = new Date();
-		startOfDay.setHours( 0, 0, 0, 0 );
+		const cutoff = new Date();
+		if ( 'mes' === range ) {
+			cutoff.setDate( 1 );
+		}
+		cutoff.setHours( 0, 0, 0, 0 );
 
 		const [ salesRes, membersRes ] = await Promise.all( [
 			supabase
 				.from( 'sales' )
 				.select( 'id, customer_name, total_amount, created_at, vendor_id, sale_items ( quantity )' )
 				.eq( 'organization_id', org.id )
-				.gte( 'created_at', startOfDay.toISOString() )
+				.gte( 'created_at', cutoff.toISOString() )
 				.order( 'created_at', { ascending: false } ),
 			supabase.from( 'memberships' ).select( 'user_id, full_name' ).eq( 'organization_id', org.id ),
 		] );
@@ -96,8 +100,14 @@ export function renderVentas( main, ctx ) {
 				</div>
 			</div>
 
-			<div style="font-size:15px;font-weight:700;margin-bottom:12px">Ventas de hoy</div>
-			${ 0 === sales.length ? '<div class="acp-empty-state">Todavía no hay ventas hoy.</div>' : salesTableHtml() }
+			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+				<div style="font-size:15px;font-weight:700">Ventas</div>
+				<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
+					<button type="button" class="v-range-btn" data-range="hoy" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'hoy' === range ? 'var(--accent)' : 'transparent' };color:${ 'hoy' === range ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Hoy</button>
+					<button type="button" class="v-range-btn" data-range="mes" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'mes' === range ? 'var(--accent)' : 'transparent' };color:${ 'mes' === range ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Este mes</button>
+				</div>
+			</div>
+			${ 0 === sales.length ? '<div class="acp-empty-state">No hay ventas en este rango.</div>' : salesTableHtml() }
 		`;
 
 		wireEvents();
@@ -183,6 +193,14 @@ export function renderVentas( main, ctx ) {
 		if ( submitBtn ) {
 			submitBtn.addEventListener( 'click', handleSubmit );
 		}
+
+		main.querySelectorAll( '.v-range-btn' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', async () => {
+				range = btn.dataset.range;
+				await loadSales();
+				draw();
+			} );
+		} );
 	}
 
 	function addToCart( variantId ) {

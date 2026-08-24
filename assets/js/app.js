@@ -5,9 +5,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
 import { renderProductos } from './screens/productos.js?v=2';
-import { renderVentas } from './screens/ventas.js?v=2';
-import { renderDashboard } from './screens/dashboard.js?v=1';
+import { renderVentas } from './screens/ventas.js?v=3';
+import { renderDashboard } from './screens/dashboard.js?v=2';
 import { renderConfiguracion } from './screens/configuracion.js?v=1';
+import { renderGastos } from './screens/gastos.js?v=1';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
@@ -20,6 +21,7 @@ function navItemsFor( role ) {
 	items.push( { id: 'ventas', label: 'Ventas' } );
 	if ( 'administrador' === role ) {
 		items.push( { id: 'productos', label: 'Productos' } );
+		items.push( { id: 'gastos', label: 'Gastos' } );
 	}
 	items.push( { id: 'configuracion', label: 'Configuración' } );
 	return items;
@@ -32,11 +34,19 @@ let state = {
 	memberships: [],
 	activeMembership: null,
 	activeNav: 'ventas',
+	navParams: null,
 };
 
 function setState( patch ) {
 	state = { ...state, ...patch };
 	render();
+}
+
+// Le permite a una pantalla (ej. una tarjeta clickeable del Dashboard) mandar
+// a otra pantalla con un filtro inicial — como "Ventas del mes" abriendo
+// Ventas ya puesto en modo mes en vez del "hoy" por defecto.
+function navigateTo( navId, params ) {
+	setState( { activeNav: navId, navParams: params || null } );
 }
 
 async function init() {
@@ -265,7 +275,7 @@ function renderApp() {
 				setState( { screen: 'org-select' } );
 				return;
 			}
-			setState( { activeNav: btn.dataset.nav } );
+			setState( { activeNav: btn.dataset.nav, navParams: null } );
 		} );
 	} );
 
@@ -275,7 +285,14 @@ function renderApp() {
 function renderMain() {
 	const main = document.getElementById( 'acp-main' );
 	const m = state.activeMembership;
-	const ctx = { supabase, org: m.organizations, isAdmin: 'administrador' === m.role, membership: m };
+	const ctx = {
+		supabase,
+		org: m.organizations,
+		isAdmin: 'administrador' === m.role,
+		membership: m,
+		navigateTo,
+		navParams: state.navParams,
+	};
 
 	if ( 'dashboard' === state.activeNav && ctx.isAdmin ) {
 		renderDashboard( main, ctx );
@@ -284,6 +301,11 @@ function renderMain() {
 
 	if ( 'productos' === state.activeNav && ctx.isAdmin ) {
 		renderProductos( main, ctx );
+		return;
+	}
+
+	if ( 'gastos' === state.activeNav && ctx.isAdmin ) {
+		renderGastos( main, ctx );
 		return;
 	}
 
