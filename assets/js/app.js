@@ -166,20 +166,23 @@ function renderLogin() {
 				</div>
 				${ state.loginError ? `<div class="acp-error">${ escapeHtml( state.loginError ) }</div>` : '' }
 				<form id="acp-login-form">
-					<div class="acp-field">
-						<label for="acp-email">Correo</label>
-						<input type="email" id="acp-email" required autocomplete="username" ${ state.loginBusy ? 'disabled' : '' } value="${ escapeHtml( localStorage.getItem( 'acp_prime_last_email' ) || '' ) }" />
-					</div>
-					<div class="acp-field">
-						<label for="acp-pin">PIN</label>
-						<input type="password" id="acp-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autocomplete="current-password" ${ state.loginBusy ? 'disabled' : '' } />
-					</div>
-					<button type="submit" class="acp-btn-primary" ${ state.loginBusy ? 'disabled' : '' }>
+					<div style="position:relative">
+						<div class="acp-field">
+							<label for="acp-email">Correo</label>
+							<input type="email" id="acp-email" required autocomplete="username" ${ state.loginBusy ? 'disabled' : '' } value="${ escapeHtml( localStorage.getItem( 'acp_prime_last_email' ) || '' ) }" />
+						</div>
+						<div class="acp-field">
+							<label for="acp-pin">PIN</label>
+							<input type="password" id="acp-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" required autocomplete="current-password" ${ state.loginBusy ? 'disabled' : '' } />
+						</div>
 						${
 							state.loginBusy
-								? '<span style="display:inline-flex;align-items:center;gap:8px;justify-content:center"><img src="assets/img/loading.svg" alt="" width="20" height="20" /> Entrando…</span>'
-								: 'Entrar'
+								? '<div class="acp-fields-overlay"><img src="assets/img/loading.svg" alt="Entrando…" width="36" height="36" /></div>'
+								: ''
 						}
+					</div>
+					<button type="submit" class="acp-btn-primary" ${ state.loginBusy ? 'disabled' : '' }>
+						${ state.loginBusy ? 'Entrando…' : 'Entrar' }
 					</button>
 				</form>
 			</div>

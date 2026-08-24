@@ -29,6 +29,22 @@
 	50% { opacity: 1; }
 }
 
+.acp-fields-overlay {
+	position: absolute;
+	inset: -4px;
+	background: var(--card);
+	border-radius: 10px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 5;
+}
+
+.acp-fields-overlay img {
+	filter: drop-shadow(0 0 10px oklch(0.72 0.16 152 / 0.5));
+	animation: acp-loading-pulse 2s ease-in-out infinite;
+}
+
 .acp-login-brand {
 	display: flex;
 	align-items: center;
