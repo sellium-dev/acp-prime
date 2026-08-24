@@ -138,9 +138,9 @@ export function renderVentas( main, ctx ) {
 					<div style="font-weight:600">${ esc( item.name ) }</div>
 					<div style="color:var(--text-muted)">${ esc( item.size ) }${ item.color ? ' · ' + esc( item.color ) : '' }</div>
 				</div>
-				<button type="button" class="c-minus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:26px;height:26px;border-radius:6px;cursor:pointer">−</button>
+				<button type="button" class="c-minus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:6px;cursor:pointer;font-size:16px;flex:0 0 auto">−</button>
 				<div style="width:24px;text-align:center">${ item.qty }</div>
-				<button type="button" class="c-plus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:26px;height:26px;border-radius:6px;cursor:pointer">+</button>
+				<button type="button" class="c-plus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:6px;cursor:pointer;font-size:16px;flex:0 0 auto">+</button>
 				<div style="width:70px;text-align:right;font-weight:700">${ money( item.price * item.qty ) }</div>
 				<button type="button" class="c-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px">&times;</button>
 			</div>
@@ -150,13 +150,13 @@ export function renderVentas( main, ctx ) {
 	function salesTableHtml() {
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden">
-				<div style="display:grid;grid-template-columns:1fr 1.2fr 1fr 0.8fr 0.8fr;gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
+				<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr);gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
 					<div>Hora</div><div>Vendedor</div><div>Cliente</div><div>Ítems</div><div>Total</div>
 				</div>
 				${ sales
 					.map(
 						( s ) => `
-					<div style="display:grid;grid-template-columns:1fr 1.2fr 1fr 0.8fr 0.8fr;gap:12px;padding:12px 18px;font-size:13px;border-bottom:1px solid var(--border)">
+					<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr);gap:12px;padding:12px 18px;font-size:13px;border-bottom:1px solid var(--border)">
 						<div>${ new Date( s.created_at ).toLocaleTimeString( 'es-CL', { hour: '2-digit', minute: '2-digit' } ) }</div>
 						<div>${ esc( memberNames.get( s.vendor_id ) || '—' ) }</div>
 						<div style="color:var(--text-muted)">${ esc( s.customer_name || '—' ) }</div>

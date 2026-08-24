@@ -344,3 +344,12 @@
 .acp-chart-segment:hover::after {
 	opacity: 1;
 }
+
+/* En celular no caben las 14 etiquetas de fecha sin encimarse — se muestra
+   una de cada dos (el detalle exacto de cada día sigue disponible en el
+   tooltip al tocar/pasar el mouse sobre la barra). */
+@media (max-width: 480px) {
+	.acp-chart-day:nth-child(even) .acp-chart-daylabel {
+		visibility: hidden;
+	}
+}

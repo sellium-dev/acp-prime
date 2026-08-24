@@ -47,11 +47,11 @@ export function renderGastos( main, ctx ) {
 
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:560px;margin-bottom:24px">
 				<div style="font-size:14px;font-weight:700;margin-bottom:14px">Registrar gasto</div>
-				<div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-bottom:10px">
+				<div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:10px;margin-bottom:10px">
 					<input id="e-description" placeholder="Descripción (ej. publicidad Instagram)" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;font-family:inherit" />
 					<input id="e-amount" type="number" step="0.01" placeholder="Monto" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;font-family:inherit" />
 				</div>
-				<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+				<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:14px">
 					<input id="e-category" placeholder="Categoría (opcional)" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;font-family:inherit" />
 					<input id="e-date" type="date" value="${ ymd( new Date() ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-size:13px;font-family:inherit" />
 				</div>
@@ -80,13 +80,13 @@ export function renderGastos( main, ctx ) {
 	function expensesTableHtml() {
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden">
-				<div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr;gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
+				<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
 					<div>Fecha</div><div>Descripción</div><div>Categoría</div><div>Monto</div>
 				</div>
 				${ expenses
 					.map(
 						( e ) => `
-					<div style="display:grid;grid-template-columns:1fr 2fr 1fr 1fr;gap:12px;padding:12px 18px;font-size:13px;border-bottom:1px solid var(--border)">
+					<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr) minmax(0,1fr) minmax(0,1fr);gap:12px;padding:12px 18px;font-size:13px;border-bottom:1px solid var(--border)">
 						<div>${ esc( e.expense_date ) }</div>
 						<div>${ esc( e.description ) }</div>
 						<div style="color:var(--text-muted)">${ esc( e.category || '—' ) }</div>

@@ -241,7 +241,7 @@ export function renderDashboard( main, ctx ) {
 	function dayBarHtml( day, maxTotal ) {
 		const heightPct = 0 === day.total ? 0 : Math.max( 4, Math.round( ( day.total / maxTotal ) * 100 ) );
 		return `
-			<div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">
+			<div class="acp-chart-day" style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">
 				<div style="width:100%;max-width:24px;height:${ heightPct }%;display:flex;flex-direction:column;justify-content:flex-end">
 					${ day.segments
 						.map( ( seg, i ) => {
@@ -255,7 +255,7 @@ export function renderDashboard( main, ctx ) {
 						} )
 						.join( '' ) }
 				</div>
-				<div style="font-size:10px;color:var(--text-faint2, var(--text-muted));margin-top:8px;white-space:nowrap">${ esc( day.label ) }</div>
+				<div class="acp-chart-daylabel" style="font-size:10px;color:var(--text-faint2, var(--text-muted));margin-top:8px;white-space:nowrap">${ esc( day.label ) }</div>
 			</div>
 		`;
 	}
