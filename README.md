@@ -66,10 +66,15 @@ que ya existe.
   gastos (antes era solo lectura/escritura de administrador); administrador
   sigue siendo el único que puede editar o borrar un gasto ya creado.
 - **`005_permisos_vendedor.sql`**: agrega `organizations.vendor_permissions`
-  (jsonb) para habilitar/deshabilitar por empresa, desde Configuración, si
-  el rol vendedor ve Dashboard/Gastos/Productos. El administrador siempre
-  tiene acceso completo (no configurable, para no poder auto-bloquearse); y
-  aunque Productos esté habilitado, un vendedor solo puede ver el catálogo y
+  (jsonb) para habilitar/deshabilitar, por empresa, si el rol vendedor ve
+  Dashboard/Gastos/Productos. Reemplazado por `006` — ver abajo.
+- **`006_permisos_por_vendedor.sql`**: mueve ese permiso de la empresa a
+  cada vendedor individual (`memberships.vendor_permissions`), porque el
+  de `005` afectaba a todos los vendedores de la empresa por igual. Desde
+  Configuración → Permisos, el administrador elige un vendedor puntual y
+  ve/edita solo sus permisos. El administrador siempre tiene acceso
+  completo (no configurable, para no poder auto-bloquearse); y aunque
+  Productos esté habilitado, un vendedor solo puede ver el catálogo y
   cargar productos nuevos — nunca editar el stock/precio de uno existente,
   eso queda reservado a administrador sin excepción.
 

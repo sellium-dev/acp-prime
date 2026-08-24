@@ -6,6 +6,8 @@ const PERMISSION_MODULES = [
 	{ key: 'productos', label: 'Productos', hint: 'Ver el catálogo y cargar productos nuevos (nunca editar stock/precio existente).' },
 ];
 
+const DEFAULT_VENDOR_PERMISSIONS = { dashboard: true, gastos: true, productos: false };
+
 export function renderConfiguracion( main, ctx ) {
 	const { supabase, org, isAdmin } = ctx;
 	let members = [];
@@ -14,7 +16,8 @@ export function renderConfiguracion( main, ctx ) {
 	let saving = false;
 	let errorMsg = '';
 	let successMsg = '';
-	let vendorPermissions = Object.assign( { dashboard: true, gastos: true, productos: false }, org.vendor_permissions || {} );
+	let activeTab = 'usuarios'; // 'usuarios' | 'permisos'
+	let selectedVendorId = null;
 	let savingPermission = null; // key del toggle que está guardando ahora mismo
 
 	load();
@@ -23,7 +26,7 @@ export function renderConfiguracion( main, ctx ) {
 		main.innerHTML = '<div class="acp-empty-state">Cargando…</div>';
 
 		const [ membersRes, userRes ] = await Promise.all( [
-			supabase.from( 'memberships' ).select( 'id, user_id, full_name, role' ).eq( 'organization_id', org.id ).order( 'full_name' ),
+			supabase.from( 'memberships' ).select( 'id, user_id, full_name, role, vendor_permissions' ).eq( 'organization_id', org.id ).order( 'full_name' ),
 			supabase.auth.getUser(),
 		] );
 
@@ -35,6 +38,12 @@ export function renderConfiguracion( main, ctx ) {
 
 		members = membersRes.data || [];
 		currentUserId = userRes.data?.user?.id || null;
+
+		const vendedores = members.filter( ( m ) => 'vendedor' === m.role );
+		if ( ! selectedVendorId || ! vendedores.some( ( v ) => v.id === selectedVendorId ) ) {
+			selectedVendorId = vendedores[ 0 ]?.id || null;
+		}
+
 		draw();
 	}
 
@@ -46,18 +55,64 @@ export function renderConfiguracion( main, ctx ) {
 			${ errorMsg ? `<div class="acp-error">${ esc( errorMsg ) }</div>` : '' }
 			${ successMsg ? `<div class="acp-error" style="background:oklch(0.72 0.16 152 / 0.12);border-color:oklch(0.72 0.16 152 / 0.35);color:oklch(0.72 0.16 152)">${ esc( successMsg ) }</div>` : '' }
 
-			${ isAdmin ? permissionsSectionHtml() + membersSectionHtml() : '<div class="acp-empty-state">No hay ajustes disponibles para tu rol.</div>' }
+			${ isAdmin ? tabsHtml() : '' }
+			${
+				isAdmin
+					? 'permisos' === activeTab
+						? permissionsSectionHtml()
+						: membersSectionHtml()
+					: '<div class="acp-empty-state">No hay ajustes disponibles para tu rol.</div>'
+			}
 		`;
 
 		if ( isAdmin ) {
-			wirePermissionsSection();
-			wireMembersSection();
+			wireTabs();
+			if ( 'permisos' === activeTab ) {
+				wirePermissionsSection();
+			} else {
+				wireMembersSection();
+			}
 		}
 	}
 
-	function permissionsSectionHtml() {
+	function tabsHtml() {
 		return `
-			<div style="font-size:15px;font-weight:700;margin-bottom:12px">Permisos de vendedor</div>
+			<div style="display:flex;gap:4px;margin-bottom:24px;background:var(--input-bg);border-radius:9px;padding:3px;max-width:320px">
+				<button type="button" class="acp-mode-btn" data-tab="usuarios" style="flex:1;padding:8px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'usuarios' === activeTab ? 'var(--accent)' : 'transparent' };color:${ 'usuarios' === activeTab ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Usuarios</button>
+				<button type="button" class="acp-mode-btn" data-tab="permisos" style="flex:1;padding:8px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'permisos' === activeTab ? 'var(--accent)' : 'transparent' };color:${ 'permisos' === activeTab ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Permisos</button>
+			</div>
+		`;
+	}
+
+	function wireTabs() {
+		main.querySelectorAll( '[data-tab]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				activeTab = btn.dataset.tab;
+				errorMsg = '';
+				draw();
+			} );
+		} );
+	}
+
+	function permissionsSectionHtml() {
+		const vendedores = members.filter( ( m ) => 'vendedor' === m.role );
+
+		if ( 0 === vendedores.length ) {
+			return '<div class="acp-empty-state">Todavía no hay vendedores en esta empresa. Agrega uno desde la pestaña "Usuarios".</div>';
+		}
+
+		const selected = vendedores.find( ( v ) => v.id === selectedVendorId ) || vendedores[ 0 ];
+		const permissions = Object.assign( {}, DEFAULT_VENDOR_PERMISSIONS, selected.vendor_permissions || {} );
+
+		return `
+			<div class="acp-field" style="max-width:320px;margin-bottom:20px">
+				<label>Vendedor</label>
+				<select id="c-vendor-select" style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px;color:var(--text);font-size:15px;font-family:inherit">
+					${ vendedores.map( ( v ) => `<option value="${ v.id }" ${ v.id === selected.id ? 'selected' : '' }>${ esc( v.full_name ) }</option>` ).join( '' ) }
+				</select>
+			</div>
+
+			<div style="font-size:15px;font-weight:700;margin-bottom:12px">Permisos de ${ esc( selected.full_name ) }</div>
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:28px;max-width:640px">
 				${ PERMISSION_MODULES.map( ( mod ) => `
 					<div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)">
@@ -68,11 +123,11 @@ export function renderConfiguracion( main, ctx ) {
 						<button
 							type="button"
 							data-toggle-permission="${ mod.key }"
-							aria-pressed="${ !! vendorPermissions[ mod.key ] }"
+							aria-pressed="${ !! permissions[ mod.key ] }"
 							${ savingPermission ? 'disabled' : '' }
-							style="width:44px;height:26px;border-radius:20px;border:none;cursor:pointer;flex-shrink:0;position:relative;background:${ vendorPermissions[ mod.key ] ? 'var(--accent)' : 'var(--input-bg)' };opacity:${ savingPermission === mod.key ? '0.6' : '1' };transition:background 0.15s ease"
+							style="width:44px;height:26px;border-radius:20px;border:none;cursor:pointer;flex-shrink:0;position:relative;background:${ permissions[ mod.key ] ? 'var(--accent)' : 'var(--input-bg)' };opacity:${ savingPermission === mod.key ? '0.6' : '1' };transition:background 0.15s ease"
 						>
-							<span style="position:absolute;top:3px;left:${ vendorPermissions[ mod.key ] ? '21px' : '3px' };width:20px;height:20px;border-radius:50%;background:#fff;transition:left 0.15s ease"></span>
+							<span style="position:absolute;top:3px;left:${ permissions[ mod.key ] ? '21px' : '3px' };width:20px;height:20px;border-radius:50%;background:#fff;transition:left 0.15s ease"></span>
 						</button>
 					</div>
 				` ).join( '' ) }
@@ -81,6 +136,15 @@ export function renderConfiguracion( main, ctx ) {
 	}
 
 	function wirePermissionsSection() {
+		const select = document.getElementById( 'c-vendor-select' );
+		if ( select ) {
+			select.addEventListener( 'change', () => {
+				selectedVendorId = select.value;
+				errorMsg = '';
+				draw();
+			} );
+		}
+
 		main.querySelectorAll( '[data-toggle-permission]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => handleTogglePermission( btn.dataset.togglePermission ) );
 		} );
@@ -90,14 +154,21 @@ export function renderConfiguracion( main, ctx ) {
 		if ( savingPermission ) {
 			return;
 		}
-		const nextValue = ! vendorPermissions[ key ];
-		const nextPermissions = Object.assign( {}, vendorPermissions, { [ key ]: nextValue } );
+
+		const vendedores = members.filter( ( m ) => 'vendedor' === m.role );
+		const selected = vendedores.find( ( v ) => v.id === selectedVendorId );
+		if ( ! selected ) {
+			return;
+		}
+
+		const currentPermissions = Object.assign( {}, DEFAULT_VENDOR_PERMISSIONS, selected.vendor_permissions || {} );
+		const nextPermissions = Object.assign( {}, currentPermissions, { [ key ]: ! currentPermissions[ key ] } );
 
 		savingPermission = key;
 		errorMsg = '';
 		draw();
 
-		const { error } = await supabase.from( 'organizations' ).update( { vendor_permissions: nextPermissions } ).eq( 'id', org.id );
+		const { error } = await supabase.from( 'memberships' ).update( { vendor_permissions: nextPermissions } ).eq( 'id', selected.id );
 
 		savingPermission = null;
 
@@ -107,8 +178,7 @@ export function renderConfiguracion( main, ctx ) {
 			return;
 		}
 
-		vendorPermissions = nextPermissions;
-		org.vendor_permissions = nextPermissions;
+		selected.vendor_permissions = nextPermissions;
 		draw();
 	}
 
@@ -189,7 +259,7 @@ export function renderConfiguracion( main, ctx ) {
 	}
 
 	function wireMembersSection() {
-		main.querySelectorAll( '.acp-mode-btn' ).forEach( ( btn ) => {
+		main.querySelectorAll( '.acp-mode-btn[data-mode]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => {
 				addMode = btn.dataset.mode;
 				errorMsg = '';

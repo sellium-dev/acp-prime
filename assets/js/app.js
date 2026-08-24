@@ -7,18 +7,19 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
 import { renderProductos } from './screens/productos.js?v=3';
 import { renderVentas } from './screens/ventas.js?v=4';
 import { renderDashboard } from './screens/dashboard.js?v=4';
-import { renderConfiguracion } from './screens/configuracion.js?v=2';
+import { renderConfiguracion } from './screens/configuracion.js?v=3';
 import { renderGastos } from './screens/gastos.js?v=3';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
 
 // El administrador siempre tiene todo. Para vendedor, cada módulo opcional
-// (dashboard/gastos/productos) depende de lo que la empresa haya habilitado
-// en Configuración → Permisos (organizations.vendor_permissions).
+// (dashboard/gastos/productos) depende de lo que el administrador le haya
+// habilitado a esa persona puntual en Configuración → Permisos
+// (memberships.vendor_permissions — es por vendedor, no por empresa).
 function permissionsFor( membership ) {
 	const isAdmin = 'administrador' === membership.role;
-	const vendorPerms = membership.organizations.vendor_permissions || {};
+	const vendorPerms = membership.vendor_permissions || {};
 
 	return {
 		isAdmin,
@@ -89,7 +90,7 @@ async function loadMemberships( userId ) {
 	// hizo más lento el login recién.
 	const { data, error } = await supabase
 		.from( 'memberships' )
-		.select( 'id, user_id, role, full_name, organization_id, organizations ( id, name, slug, vendor_permissions )' )
+		.select( 'id, user_id, role, full_name, organization_id, vendor_permissions, organizations ( id, name, slug )' )
 		.eq( 'user_id', userId );
 
 	if ( error ) {
