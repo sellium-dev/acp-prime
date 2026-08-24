@@ -4,21 +4,44 @@
 // número cada vez que se toca alguno de estos archivos.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
-import { renderProductos } from './screens/productos.js?v=2';
+import { renderProductos } from './screens/productos.js?v=3';
 import { renderVentas } from './screens/ventas.js?v=4';
-import { renderDashboard } from './screens/dashboard.js?v=3';
-import { renderConfiguracion } from './screens/configuracion.js?v=1';
+import { renderDashboard } from './screens/dashboard.js?v=4';
+import { renderConfiguracion } from './screens/configuracion.js?v=2';
 import { renderGastos } from './screens/gastos.js?v=3';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
 
-function navItemsFor( role ) {
-	const items = [ { id: 'dashboard', label: 'Dashboard' }, { id: 'ventas', label: 'Ventas' } ];
-	if ( 'administrador' === role ) {
+// El administrador siempre tiene todo. Para vendedor, cada módulo opcional
+// (dashboard/gastos/productos) depende de lo que la empresa haya habilitado
+// en Configuración → Permisos (organizations.vendor_permissions).
+function permissionsFor( membership ) {
+	const isAdmin = 'administrador' === membership.role;
+	const vendorPerms = membership.organizations.vendor_permissions || {};
+
+	return {
+		isAdmin,
+		canSeeDashboard: isAdmin || !! vendorPerms.dashboard,
+		canSeeGastos: isAdmin || !! vendorPerms.gastos,
+		canSeeProductos: isAdmin || !! vendorPerms.productos,
+		canCreateProducts: isAdmin || !! vendorPerms.productos,
+		canEditProducts: isAdmin, // nunca vendedor, sin excepción
+	};
+}
+
+function navItemsFor( perms ) {
+	const items = [];
+	if ( perms.canSeeDashboard ) {
+		items.push( { id: 'dashboard', label: 'Dashboard' } );
+	}
+	items.push( { id: 'ventas', label: 'Ventas' } );
+	if ( perms.canSeeProductos ) {
 		items.push( { id: 'productos', label: 'Productos' } );
 	}
-	items.push( { id: 'gastos', label: 'Gastos' } );
+	if ( perms.canSeeGastos ) {
+		items.push( { id: 'gastos', label: 'Gastos' } );
+	}
 	items.push( { id: 'configuracion', label: 'Configuración' } );
 	return items;
 }
@@ -66,7 +89,7 @@ async function loadMemberships( userId ) {
 	// hizo más lento el login recién.
 	const { data, error } = await supabase
 		.from( 'memberships' )
-		.select( 'id, user_id, role, full_name, organization_id, organizations ( id, name, slug )' )
+		.select( 'id, user_id, role, full_name, organization_id, organizations ( id, name, slug, vendor_permissions )' )
 		.eq( 'user_id', userId );
 
 	if ( error ) {
@@ -239,6 +262,7 @@ function renderOrgSelect() {
 
 function renderApp() {
 	const m = state.activeMembership;
+	const perms = permissionsFor( m );
 	const initials = m.full_name
 		.split( ' ' )
 		.map( ( p ) => p[ 0 ] )
@@ -255,7 +279,7 @@ function renderApp() {
 				</div>
 				<div class="acp-sidebar__org">${ escapeHtml( m.organizations.name ) }</div>
 				<nav class="acp-nav">
-					${ navItemsFor( m.role ).map(
+					${ navItemsFor( perms ).map(
 						( item ) => `
 						<button type="button" class="acp-nav__item ${ item.id === state.activeNav ? 'is-active' : '' }" data-nav="${ item.id }">
 							${ item.label }
@@ -301,26 +325,32 @@ function renderApp() {
 function renderMain() {
 	const main = document.getElementById( 'acp-main' );
 	const m = state.activeMembership;
+	const perms = permissionsFor( m );
 	const ctx = {
 		supabase,
 		org: m.organizations,
-		isAdmin: 'administrador' === m.role,
+		isAdmin: perms.isAdmin,
+		canSeeDashboard: perms.canSeeDashboard,
+		canSeeGastos: perms.canSeeGastos,
+		canSeeProductos: perms.canSeeProductos,
+		canCreateProducts: perms.canCreateProducts,
+		canEditProducts: perms.canEditProducts,
 		membership: m,
 		navigateTo,
 		navParams: state.navParams,
 	};
 
-	if ( 'dashboard' === state.activeNav ) {
+	if ( 'dashboard' === state.activeNav && ctx.canSeeDashboard ) {
 		renderDashboard( main, ctx );
 		return;
 	}
 
-	if ( 'productos' === state.activeNav && ctx.isAdmin ) {
+	if ( 'productos' === state.activeNav && ctx.canSeeProductos ) {
 		renderProductos( main, ctx );
 		return;
 	}
 
-	if ( 'gastos' === state.activeNav ) {
+	if ( 'gastos' === state.activeNav && ctx.canSeeGastos ) {
 		renderGastos( main, ctx );
 		return;
 	}

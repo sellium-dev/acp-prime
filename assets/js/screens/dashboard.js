@@ -6,7 +6,7 @@ const VENDOR_COLORS = [ '#3987e5', '#199e70', '#c98500', '#9085e9', '#e66767' ];
 const CHART_DAYS = 14;
 
 export function renderDashboard( main, ctx ) {
-	const { supabase, org, navigateTo } = ctx;
+	const { supabase, org, navigateTo, canSeeProductos, canSeeGastos } = ctx;
 	let stats = null;
 	let chartDays = [];
 	let chartVendors = [];
@@ -143,8 +143,13 @@ export function renderDashboard( main, ctx ) {
 
 			<div style="font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:10px">Inventario actual</div>
 			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:28px">
-				${ statCard( 'Monto invertido', money( stats.invested ), 'Costo de todo tu stock actual — click para ver el detalle', 'productos' ) }
-				${ statCard( 'Ganancia potencial', money( stats.potentialProfit ), 'Si vendes todo el stock actual a precio de lista', 'productos' ) }
+				${ statCard(
+					'Monto invertido',
+					money( stats.invested ),
+					'Costo de todo tu stock actual' + ( canSeeProductos ? ' — click para ver el detalle' : '' ),
+					canSeeProductos ? 'productos' : null
+				) }
+				${ statCard( 'Ganancia potencial', money( stats.potentialProfit ), 'Si vendes todo el stock actual a precio de lista', canSeeProductos ? 'productos' : null ) }
 			</div>
 
 			<div style="font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:10px">Ventas</div>
@@ -155,12 +160,17 @@ export function renderDashboard( main, ctx ) {
 
 			<div style="font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:10px">Gastos y ganancia neta (este mes)</div>
 			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:28px">
-				${ statCard( 'Gastos del mes', money( stats.monthExpenses ), 'Click para ver o registrar gastos', 'gastos' ) }
+				${ statCard(
+					'Gastos del mes',
+					money( stats.monthExpenses ),
+					canSeeGastos ? 'Click para ver o registrar gastos' : '',
+					canSeeGastos ? 'gastos' : null
+				) }
 				${ statCard(
 					'Ganancia neta del mes',
 					money( stats.netMonthProfit ),
 					'Utilidad de ventas menos gastos',
-					'gastos',
+					canSeeGastos ? 'gastos' : null,
 					null,
 					stats.netMonthProfit >= 0 ? 'oklch(0.72 0.16 152)' : 'oklch(0.65 0.18 25)'
 				) }
@@ -178,8 +188,9 @@ export function renderDashboard( main, ctx ) {
 	}
 
 	function statCard( label, value, hint, goto, params, color ) {
+		const clickable = Boolean( goto );
 		return `
-			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;cursor:pointer;transition:border-color 0.15s ease" class="acp-kpi-card" data-goto="${ goto }" ${ params ? `data-params='${ JSON.stringify( params ) }'` : '' }>
+			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;${ clickable ? 'cursor:pointer;' : '' }transition:border-color 0.15s ease" class="${ clickable ? 'acp-kpi-card' : '' }" ${ clickable ? `data-goto="${ goto }"` : '' } ${ params ? `data-params='${ JSON.stringify( params ) }'` : '' }>
 				<div style="font-size:13px;color:var(--text-muted);font-weight:600;margin-bottom:10px">${ esc( label ) }</div>
 				<div style="font-size:24px;font-weight:800;letter-spacing:-0.01em${ color ? `;color:${ color }` : '' }">${ value }</div>
 				${ hint ? `<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:6px">${ esc( hint ) }</div>` : '' }

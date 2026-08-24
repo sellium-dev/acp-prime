@@ -1,7 +1,7 @@
 const CATEGORIES = [ 'Poleras/Camisetas', 'Shorts', 'Pantalones/Joggers', 'Zapatillas', 'Accesorios' ];
 
 export function renderProductos( main, ctx ) {
-	const { supabase, org, isAdmin } = ctx;
+	const { supabase, org, canCreateProducts, canEditProducts } = ctx;
 	let view = 'list';
 	let products = [];
 	let search = '';
@@ -42,7 +42,7 @@ export function renderProductos( main, ctx ) {
 		main.innerHTML = `
 			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
 				<div style="font-size:24px;font-weight:800;letter-spacing:-0.01em">Productos</div>
-				${ isAdmin ? '<button type="button" class="acp-btn-primary" style="width:auto;padding:10px 18px" id="acp-new-product">+ Nuevo producto</button>' : '' }
+				${ canCreateProducts ? '<button type="button" class="acp-btn-primary" style="width:auto;padding:10px 18px" id="acp-new-product">+ Nuevo producto</button>' : '' }
 			</div>
 			<input id="p-search" placeholder="Buscar por nombre…" value="${ escAttr( search ) }"
 				style="width:100%;max-width:360px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;font-family:inherit;outline:none;margin-bottom:20px" />
@@ -87,7 +87,7 @@ export function renderProductos( main, ctx ) {
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px">
 				<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
 					<div style="font-size:15px;font-weight:700">${ esc( product.name ) }</div>
-					${ isAdmin ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 14px" data-edit="${ product.id }">Editar</button>` : '' }
+					${ canEditProducts ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 14px" data-edit="${ product.id }">Editar</button>` : '' }
 				</div>
 				<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">${ esc( product.category ) } · ${ totalStock } en stock</div>
 				<div style="display:flex;flex-direction:column;gap:6px">

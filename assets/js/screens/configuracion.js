@@ -1,5 +1,11 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js?v=2';
 
+const PERMISSION_MODULES = [
+	{ key: 'dashboard', label: 'Dashboard', hint: 'Ver montos invertidos, ganancias y gastos del negocio.' },
+	{ key: 'gastos', label: 'Gastos', hint: 'Ver y registrar gastos del negocio.' },
+	{ key: 'productos', label: 'Productos', hint: 'Ver el catálogo y cargar productos nuevos (nunca editar stock/precio existente).' },
+];
+
 export function renderConfiguracion( main, ctx ) {
 	const { supabase, org, isAdmin } = ctx;
 	let members = [];
@@ -8,6 +14,8 @@ export function renderConfiguracion( main, ctx ) {
 	let saving = false;
 	let errorMsg = '';
 	let successMsg = '';
+	let vendorPermissions = Object.assign( { dashboard: true, gastos: true, productos: false }, org.vendor_permissions || {} );
+	let savingPermission = null; // key del toggle que está guardando ahora mismo
 
 	load();
 
@@ -38,12 +46,70 @@ export function renderConfiguracion( main, ctx ) {
 			${ errorMsg ? `<div class="acp-error">${ esc( errorMsg ) }</div>` : '' }
 			${ successMsg ? `<div class="acp-error" style="background:oklch(0.72 0.16 152 / 0.12);border-color:oklch(0.72 0.16 152 / 0.35);color:oklch(0.72 0.16 152)">${ esc( successMsg ) }</div>` : '' }
 
-			${ isAdmin ? membersSectionHtml() : '<div class="acp-empty-state">No hay ajustes disponibles para tu rol.</div>' }
+			${ isAdmin ? permissionsSectionHtml() + membersSectionHtml() : '<div class="acp-empty-state">No hay ajustes disponibles para tu rol.</div>' }
 		`;
 
 		if ( isAdmin ) {
+			wirePermissionsSection();
 			wireMembersSection();
 		}
+	}
+
+	function permissionsSectionHtml() {
+		return `
+			<div style="font-size:15px;font-weight:700;margin-bottom:12px">Permisos de vendedor</div>
+			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:28px;max-width:640px">
+				${ PERMISSION_MODULES.map( ( mod ) => `
+					<div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border)">
+						<div style="flex:1;min-width:0">
+							<div style="font-size:14px;font-weight:600">${ esc( mod.label ) }</div>
+							<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${ esc( mod.hint ) }</div>
+						</div>
+						<button
+							type="button"
+							data-toggle-permission="${ mod.key }"
+							aria-pressed="${ !! vendorPermissions[ mod.key ] }"
+							${ savingPermission ? 'disabled' : '' }
+							style="width:44px;height:26px;border-radius:20px;border:none;cursor:pointer;flex-shrink:0;position:relative;background:${ vendorPermissions[ mod.key ] ? 'var(--accent)' : 'var(--input-bg)' };opacity:${ savingPermission === mod.key ? '0.6' : '1' };transition:background 0.15s ease"
+						>
+							<span style="position:absolute;top:3px;left:${ vendorPermissions[ mod.key ] ? '21px' : '3px' };width:20px;height:20px;border-radius:50%;background:#fff;transition:left 0.15s ease"></span>
+						</button>
+					</div>
+				` ).join( '' ) }
+			</div>
+		`;
+	}
+
+	function wirePermissionsSection() {
+		main.querySelectorAll( '[data-toggle-permission]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleTogglePermission( btn.dataset.togglePermission ) );
+		} );
+	}
+
+	async function handleTogglePermission( key ) {
+		if ( savingPermission ) {
+			return;
+		}
+		const nextValue = ! vendorPermissions[ key ];
+		const nextPermissions = Object.assign( {}, vendorPermissions, { [ key ]: nextValue } );
+
+		savingPermission = key;
+		errorMsg = '';
+		draw();
+
+		const { error } = await supabase.from( 'organizations' ).update( { vendor_permissions: nextPermissions } ).eq( 'id', org.id );
+
+		savingPermission = null;
+
+		if ( error ) {
+			errorMsg = 'No se pudo actualizar el permiso: ' + error.message;
+			draw();
+			return;
+		}
+
+		vendorPermissions = nextPermissions;
+		org.vendor_permissions = nextPermissions;
+		draw();
 	}
 
 	function membersSectionHtml() {

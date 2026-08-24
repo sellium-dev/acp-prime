@@ -62,6 +62,16 @@ que ya existe.
 - **`003_registrar_venta.sql`**: función `register_sale()` que crea una
   venta completa y descuenta stock de forma atómica (sin condiciones de
   carrera entre vendedores); amplía a quién puede ver el roster de la empresa.
+- **`004_gastos_vendedores.sql`**: permite que cualquier vendedor registre
+  gastos (antes era solo lectura/escritura de administrador); administrador
+  sigue siendo el único que puede editar o borrar un gasto ya creado.
+- **`005_permisos_vendedor.sql`**: agrega `organizations.vendor_permissions`
+  (jsonb) para habilitar/deshabilitar por empresa, desde Configuración, si
+  el rol vendedor ve Dashboard/Gastos/Productos. El administrador siempre
+  tiene acceso completo (no configurable, para no poder auto-bloquearse); y
+  aunque Productos esté habilitado, un vendedor solo puede ver el catálogo y
+  cargar productos nuevos — nunca editar el stock/precio de uno existente,
+  eso queda reservado a administrador sin excepción.
 
 ## Variables de entorno del frontend
 
