@@ -1,4 +1,5 @@
 const CATEGORIES = [ 'Poleras/Camisetas', 'Shorts', 'Pantalones/Joggers', 'Zapatillas', 'Accesorios' ];
+const SUGGESTED_MARGIN = 1.3; // costo + 30%, solo para sugerir un precio de partida
 
 export function renderProductos( main, ctx ) {
 	const { supabase, org, canCreateProducts, canEditProducts } = ctx;
@@ -144,6 +145,16 @@ export function renderProductos( main, ctx ) {
 				</div>
 
 				<div style="font-size:13px;font-weight:700;margin:20px 0 10px">Variantes (talla / color)</div>
+
+				<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px;margin-bottom:12px" id="p-shipping-toggle">+ Agregar costo de envío</button>
+				<div id="p-shipping-box" style="display:none;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;max-width:360px">
+					<div class="acp-field" style="margin-bottom:6px">
+						<label>Costo de envío total</label>
+						<input id="p-shipping-cost" type="number" step="0.01" placeholder="0" />
+					</div>
+					<div id="p-shipping-summary" style="font-size:12px;color:var(--text-muted)"></div>
+				</div>
+
 				<div id="p-variants"></div>
 				<button type="button" class="acp-btn-secondary" style="width:auto;padding:8px 14px;margin-top:6px" id="p-add-variant">+ Agregar variante</button>
 
@@ -167,6 +178,68 @@ export function renderProductos( main, ctx ) {
 			draw();
 		} );
 		document.getElementById( 'p-save' ).addEventListener( 'click', handleSave );
+
+		const shippingToggle = document.getElementById( 'p-shipping-toggle' );
+		shippingToggle.addEventListener( 'click', () => {
+			const box = document.getElementById( 'p-shipping-box' );
+			const isHidden = 'none' === box.style.display;
+			box.style.display = isHidden ? 'block' : 'none';
+			shippingToggle.textContent = isHidden ? 'Quitar costo de envío' : '+ Agregar costo de envío';
+			if ( isHidden ) {
+				document.getElementById( 'p-shipping-cost' ).focus();
+			} else {
+				document.getElementById( 'p-shipping-cost' ).value = '';
+			}
+			updatePriceSuggestions();
+		} );
+
+		// Delegado en vez de un listener por fila: así las variantes que se
+		// agreguen después (+ Agregar variante) quedan cubiertas sin volver a
+		// engancharlas una por una.
+		main.addEventListener( 'input', ( e ) => {
+			if ( e.target.matches( '.v-cost, .v-stock, #p-shipping-cost' ) ) {
+				updatePriceSuggestions();
+			}
+		} );
+	}
+
+	// El costo de envío se reparte entre las unidades totales de todas las
+	// variantes (ej. pediste 24 camisetas en un solo paquete: el envío se
+	// divide entre esas 24, sin importar cómo quedaron repartidas por
+	// talla/color) y ese pedazo se suma al costo base de cada fila. Nunca
+	// modifica lo que el usuario tecleó en "Costo" — solo actualiza el
+	// placeholder de "Precio" y el resumen; el cálculo real que se guarda
+	// pasa por readVariantsFromDom() al momento de guardar.
+	function shippingPerUnitFromDom() {
+		const box = document.getElementById( 'p-shipping-box' );
+		if ( ! box || 'none' === box.style.display ) {
+			return { shippingCost: 0, totalUnits: 0, perUnit: 0 };
+		}
+		const shippingCost = parseFloat( document.getElementById( 'p-shipping-cost' ).value ) || 0;
+		const rows = document.querySelectorAll( '#p-variants [data-row]' );
+		const totalUnits = Array.from( rows ).reduce( ( sum, row ) => sum + ( parseInt( row.querySelector( '.v-stock' ).value, 10 ) || 0 ), 0 );
+		return { shippingCost, totalUnits, perUnit: totalUnits > 0 ? shippingCost / totalUnits : 0 };
+	}
+
+	function updatePriceSuggestions() {
+		const { shippingCost, totalUnits, perUnit } = shippingPerUnitFromDom();
+
+		document.querySelectorAll( '#p-variants [data-row]' ).forEach( ( row ) => {
+			const cost = parseFloat( row.querySelector( '.v-cost' ).value ) || 0;
+			const finalCost = cost + perUnit;
+			const priceInput = row.querySelector( '.v-price' );
+			priceInput.placeholder = finalCost > 0 ? 'Sugerido ' + money( Math.round( finalCost * SUGGESTED_MARGIN ) ) : 'Precio';
+		} );
+
+		const summary = document.getElementById( 'p-shipping-summary' );
+		if ( ! summary ) return;
+		if ( shippingCost > 0 && totalUnits > 0 ) {
+			summary.textContent = `Se reparte ${ money( shippingCost ) } entre ${ totalUnits } unidades → +${ money( Math.round( perUnit ) ) } de costo por unidad.`;
+		} else if ( shippingCost > 0 ) {
+			summary.textContent = 'Coloca el stock de las variantes para repartir el envío.';
+		} else {
+			summary.textContent = '';
+		}
 	}
 
 	function wireCategoryField() {
@@ -230,6 +303,8 @@ export function renderProductos( main, ctx ) {
 				drawVariantRows();
 			} );
 		} );
+
+		updatePriceSuggestions();
 	}
 
 	// Lo que el usuario ya tecleó en los inputs vive solo en el DOM hasta que
@@ -251,15 +326,26 @@ export function renderProductos( main, ctx ) {
 	}
 
 	function readVariantsFromDom() {
+		const { perUnit } = shippingPerUnitFromDom();
 		const rows = document.querySelectorAll( '#p-variants [data-row]' );
-		return Array.from( rows ).map( ( row, i ) => ( {
-			id: formVariants[ i ].id,
-			size: row.querySelector( '.v-size' ).value.trim(),
-			color: row.querySelector( '.v-color' ).value.trim() || null,
-			cost: parseFloat( row.querySelector( '.v-cost' ).value ) || 0,
-			price: parseFloat( row.querySelector( '.v-price' ).value ) || 0,
-			stock_quantity: parseInt( row.querySelector( '.v-stock' ).value, 10 ) || 0,
-		} ) );
+
+		return Array.from( rows ).map( ( row, i ) => {
+			const baseCost = parseFloat( row.querySelector( '.v-cost' ).value ) || 0;
+			const cost = Math.round( ( baseCost + perUnit ) * 100 ) / 100;
+			const priceRaw = row.querySelector( '.v-price' ).value.trim();
+			// Precio en blanco = usa la sugerencia (costo + 30%) en vez de dejarlo
+			// en 0 — así el producto queda con un precio de venta utilizable
+			// aunque todavía no se haya decidido el precio final.
+			const price = '' !== priceRaw ? parseFloat( priceRaw ) || 0 : Math.round( cost * SUGGESTED_MARGIN );
+			return {
+				id: formVariants[ i ].id,
+				size: row.querySelector( '.v-size' ).value.trim(),
+				color: row.querySelector( '.v-color' ).value.trim() || null,
+				cost,
+				price,
+				stock_quantity: parseInt( row.querySelector( '.v-stock' ).value, 10 ) || 0,
+			};
+		} );
 	}
 
 	async function handleSave() {
