@@ -8,6 +8,8 @@ export function renderProductos( main, ctx ) {
 	let search = '';
 	let editingProduct = null; // null = nuevo, objeto = editando
 	let formVariants = [];
+	let restockProduct = null;
+	let restockRows = [];
 	let saving = false;
 	let errorMsg = '';
 
@@ -32,6 +34,8 @@ export function renderProductos( main, ctx ) {
 	function draw() {
 		if ( 'form' === view ) {
 			drawForm();
+		} else if ( 'restock' === view ) {
+			drawRestock();
 		} else {
 			drawList();
 		}
@@ -63,6 +67,12 @@ export function renderProductos( main, ctx ) {
 				openForm( product );
 			} );
 		} );
+		main.querySelectorAll( '[data-restock]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				const product = products.find( ( p ) => p.id === btn.dataset.restock );
+				openRestock( product );
+			} );
+		} );
 
 		const searchInput = document.getElementById( 'p-search' );
 		searchInput.addEventListener( 'input', () => {
@@ -86,9 +96,18 @@ export function renderProductos( main, ctx ) {
 		const totalStock = variants.reduce( ( sum, v ) => sum + v.stock_quantity, 0 );
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px">
-				<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+				<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px">
 					<div style="font-size:15px;font-weight:700">${ esc( product.name ) }</div>
-					${ canEditProducts ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 14px" data-edit="${ product.id }">Editar</button>` : '' }
+					${
+						canEditProducts
+							? `
+						<div style="display:flex;gap:8px;flex-shrink:0">
+							<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 14px" data-restock="${ product.id }">Reponer stock</button>
+							<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 14px" data-edit="${ product.id }">Editar</button>
+						</div>
+					`
+							: ''
+					}
 				</div>
 				<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">${ esc( product.category ) } · ${ totalStock } en stock</div>
 				<div style="display:flex;flex-direction:column;gap:6px">
@@ -121,6 +140,175 @@ export function renderProductos( main, ctx ) {
 
 	function emptyVariant() {
 		return { id: null, size: '', color: '', price: '', cost: '', stock_quantity: '' };
+	}
+
+	function openRestock( product ) {
+		restockProduct = product;
+		restockRows = ( product.product_variants || [] ).map( ( v ) => ( {
+			id: v.id,
+			size: v.size,
+			color: v.color,
+			stock_quantity: v.stock_quantity,
+			cost: v.cost,
+		} ) );
+		errorMsg = '';
+		view = 'restock';
+		draw();
+	}
+
+	function drawRestock() {
+		main.innerHTML = `
+			<div style="margin-bottom:24px">
+				<div style="font-size:24px;font-weight:800;letter-spacing:-0.01em">Reponer stock — ${ esc( restockProduct.name ) }</div>
+			</div>
+			${ errorMsg ? `<div class="acp-error">${ esc( errorMsg ) }</div>` : '' }
+			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:720px">
+				<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px;margin-bottom:12px" id="r-shipping-toggle">+ Agregar costo de envío</button>
+				<div id="r-shipping-box" style="display:none;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;max-width:360px">
+					<div class="acp-field" style="margin-bottom:6px">
+						<label>Costo de envío total</label>
+						<input id="r-shipping-cost" type="number" step="0.01" placeholder="0" />
+					</div>
+					<div id="r-shipping-summary" style="font-size:12px;color:var(--text-muted)"></div>
+				</div>
+
+				<div id="r-rows">
+					${ restockRows
+						.map(
+							( r, i ) => `
+						<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px" data-restock-row="${ i }">
+							<div style="font-size:13px;font-weight:600;margin-bottom:8px">${ esc( r.size ) }${ r.color ? ' · ' + esc( r.color ) : '' } <span style="font-weight:400;color:var(--text-muted)">— stock actual ${ r.stock_quantity }</span></div>
+							<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px">
+								<input placeholder="Cantidad a agregar" class="r-qty" type="number" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+								<input placeholder="Costo" class="r-cost" type="number" step="0.01" value="${ escAttr( r.cost ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+							</div>
+							<div class="r-hint" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
+						</div>
+					`
+						)
+						.join( '' ) }
+				</div>
+
+				<div style="display:flex;gap:10px;margin-top:24px">
+					<button type="button" class="acp-btn-primary" style="width:auto;padding:12px 22px" id="r-save" ${ saving ? 'disabled' : '' }>${ saving ? 'Guardando…' : 'Guardar' }</button>
+					<button type="button" class="acp-btn-secondary" style="width:auto;padding:12px 22px" id="r-cancel">Cancelar</button>
+				</div>
+			</div>
+		`;
+
+		document.getElementById( 'r-cancel' ).addEventListener( 'click', () => {
+			view = 'list';
+			draw();
+		} );
+		document.getElementById( 'r-save' ).addEventListener( 'click', handleRestockSave );
+
+		const shippingToggle = document.getElementById( 'r-shipping-toggle' );
+		shippingToggle.addEventListener( 'click', () => {
+			const box = document.getElementById( 'r-shipping-box' );
+			const isHidden = 'none' === box.style.display;
+			box.style.display = isHidden ? 'block' : 'none';
+			shippingToggle.textContent = isHidden ? 'Quitar costo de envío' : '+ Agregar costo de envío';
+			if ( isHidden ) {
+				document.getElementById( 'r-shipping-cost' ).focus();
+			} else {
+				document.getElementById( 'r-shipping-cost' ).value = '';
+			}
+			updateRestockHints();
+		} );
+
+		main.addEventListener( 'input', ( e ) => {
+			if ( e.target.matches( '.r-qty, .r-cost, #r-shipping-cost' ) ) {
+				updateRestockHints();
+			}
+		} );
+
+		updateRestockHints();
+	}
+
+	// El envío se reparte entre las unidades que se están AGREGANDO en esta
+	// reposición (no entre el stock total ya existente) — si pediste 24
+	// camisetas nuevas repartidas en varias tallas en un solo paquete, se
+	// divide entre esas 24, sin contar el stock que ya tenías antes.
+	function restockShippingPerUnitFromDom() {
+		const box = document.getElementById( 'r-shipping-box' );
+		if ( ! box || 'none' === box.style.display ) {
+			return { shippingCost: 0, totalQty: 0, perUnit: 0 };
+		}
+		const shippingCost = parseFloat( document.getElementById( 'r-shipping-cost' ).value ) || 0;
+		const rows = document.querySelectorAll( '#r-rows [data-restock-row]' );
+		const totalQty = Array.from( rows ).reduce( ( sum, row ) => sum + ( parseInt( row.querySelector( '.r-qty' ).value, 10 ) || 0 ), 0 );
+		return { shippingCost, totalQty, perUnit: totalQty > 0 ? shippingCost / totalQty : 0 };
+	}
+
+	function updateRestockHints() {
+		const { shippingCost, totalQty, perUnit } = restockShippingPerUnitFromDom();
+
+		document.querySelectorAll( '#r-rows [data-restock-row]' ).forEach( ( row, i ) => {
+			const addQty = parseInt( row.querySelector( '.r-qty' ).value, 10 ) || 0;
+			const baseCost = parseFloat( row.querySelector( '.r-cost' ).value ) || 0;
+			const hint = row.querySelector( '.r-hint' );
+			if ( addQty > 0 ) {
+				const finalCost = baseCost + perUnit;
+				const newStock = restockRows[ i ].stock_quantity + addQty;
+				hint.textContent = `Quedará en ${ newStock } unidades` + ( perUnit > 0 ? ` · costo final ${ money( finalCost ) }` : '' );
+			} else {
+				hint.textContent = '';
+			}
+		} );
+
+		const summary = document.getElementById( 'r-shipping-summary' );
+		if ( ! summary ) return;
+		if ( shippingCost > 0 && totalQty > 0 ) {
+			summary.textContent = `Se reparte ${ money( shippingCost ) } entre ${ totalQty } unidades → +${ money( Math.round( perUnit ) ) } de costo por unidad.`;
+		} else if ( shippingCost > 0 ) {
+			summary.textContent = 'Indica cuántas unidades llegan de cada variante para repartir el envío.';
+		} else {
+			summary.textContent = '';
+		}
+	}
+
+	async function handleRestockSave() {
+		const { perUnit } = restockShippingPerUnitFromDom();
+		const rows = document.querySelectorAll( '#r-rows [data-restock-row]' );
+
+		const updates = [];
+		rows.forEach( ( row, i ) => {
+			const addQty = parseInt( row.querySelector( '.r-qty' ).value, 10 ) || 0;
+			if ( addQty <= 0 ) return;
+			const baseCost = parseFloat( row.querySelector( '.r-cost' ).value ) || 0;
+			const cost = Math.round( ( baseCost + perUnit ) * 100 ) / 100;
+			updates.push( {
+				id: restockRows[ i ].id,
+				stock_quantity: restockRows[ i ].stock_quantity + addQty,
+				cost,
+			} );
+		} );
+
+		if ( 0 === updates.length ) {
+			errorMsg = 'Indica la cantidad a agregar de al menos una variante.';
+			draw();
+			return;
+		}
+
+		saving = true;
+		draw();
+
+		try {
+			for ( const u of updates ) {
+				const { error } = await supabase
+					.from( 'product_variants' )
+					.update( { stock_quantity: u.stock_quantity, cost: u.cost } )
+					.eq( 'id', u.id );
+				if ( error ) throw error;
+			}
+			saving = false;
+			view = 'list';
+			await load();
+		} catch ( err ) {
+			saving = false;
+			errorMsg = 'No se pudo reponer: ' + err.message;
+			draw();
+		}
 	}
 
 	function drawForm() {
