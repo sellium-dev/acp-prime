@@ -344,7 +344,7 @@ export function renderProductos( main, ctx ) {
 				</div>
 				<div class="acp-field" style="max-width:200px">
 					<label>Stock mínimo</label>
-					<input id="p-low-stock" type="number" min="0" step="1" value="${ escAttr( editingProduct?.low_stock_threshold ?? 10 ) }" />
+					<input id="p-low-stock" type="number" min="0" step="1" value="${ escAttr( editingProduct?.low_stock_threshold ?? 1 ) }" />
 					<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Debajo de esto, avisa en el Dashboard que el stock está bajo.</div>
 				</div>
 

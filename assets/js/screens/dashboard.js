@@ -5,7 +5,7 @@
 const VENDOR_COLORS = [ '#3987e5', '#199e70', '#c98500', '#9085e9', '#e66767' ];
 const CHART_DAYS = 14;
 const TOP_PRODUCTS_LIMIT = 5;
-const DEFAULT_LOW_STOCK_THRESHOLD = 10; // por si algún producto viejo no tiene el campo
+const DEFAULT_LOW_STOCK_THRESHOLD = 1; // por si algún producto viejo no tiene el campo
 const MAX_STOCK_ITEMS_PER_KIND = 2;
 
 // Mismos colores que usa el "Centro de Recomendaciones" de ACP Core (WordPress)
