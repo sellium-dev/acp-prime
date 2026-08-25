@@ -152,6 +152,10 @@ export function renderProductos( main, ctx ) {
 						<label>Costo de envío total</label>
 						<input id="p-shipping-cost" type="number" step="0.01" placeholder="0" />
 					</div>
+					<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);cursor:pointer;margin-bottom:8px">
+						<input type="checkbox" id="p-shipping-margin" style="margin:0" />
+						Aplicar el 30% de ganancia también al costo de envío
+					</label>
 					<div id="p-shipping-summary" style="font-size:12px;color:var(--text-muted)"></div>
 				</div>
 
@@ -197,7 +201,7 @@ export function renderProductos( main, ctx ) {
 		// agreguen después (+ Agregar variante) quedan cubiertas sin volver a
 		// engancharlas una por una.
 		main.addEventListener( 'input', ( e ) => {
-			if ( e.target.matches( '.v-cost, .v-stock, #p-shipping-cost' ) ) {
+			if ( e.target.matches( '.v-cost, .v-stock, #p-shipping-cost, #p-shipping-margin' ) ) {
 				updatePriceSuggestions();
 			}
 		} );
@@ -221,14 +225,28 @@ export function renderProductos( main, ctx ) {
 		return { shippingCost, totalUnits, perUnit: totalUnits > 0 ? shippingCost / totalUnits : 0 };
 	}
 
+	// El checkbox decide si el 30% de ganancia también se calcula sobre la
+	// parte de envío, o si el envío se traspasa "a costo" (sin margen) y
+	// solo el costo del producto lleva el 30% — el usuario no tenía claro
+	// cuál es más correcto para su negocio, así que queda como opción.
+	function marginAppliesToShipping() {
+		const checkbox = document.getElementById( 'p-shipping-margin' );
+		return !! ( checkbox && checkbox.checked );
+	}
+
+	function suggestedPrice( baseCost, perUnit ) {
+		return marginAppliesToShipping()
+			? Math.round( ( baseCost + perUnit ) * SUGGESTED_MARGIN )
+			: Math.round( baseCost * SUGGESTED_MARGIN + perUnit );
+	}
+
 	function updatePriceSuggestions() {
 		const { shippingCost, totalUnits, perUnit } = shippingPerUnitFromDom();
 
 		document.querySelectorAll( '#p-variants [data-row]' ).forEach( ( row ) => {
 			const cost = parseFloat( row.querySelector( '.v-cost' ).value ) || 0;
-			const finalCost = cost + perUnit;
 			const priceInput = row.querySelector( '.v-price' );
-			priceInput.placeholder = finalCost > 0 ? 'Sugerido ' + money( Math.round( finalCost * SUGGESTED_MARGIN ) ) : 'Precio';
+			priceInput.placeholder = ( cost > 0 || perUnit > 0 ) ? 'Sugerido ' + money( suggestedPrice( cost, perUnit ) ) : 'Precio';
 		} );
 
 		const summary = document.getElementById( 'p-shipping-summary' );
@@ -337,10 +355,11 @@ export function renderProductos( main, ctx ) {
 			const baseCost = parseFloat( row.querySelector( '.v-cost' ).value ) || 0;
 			const cost = Math.round( ( baseCost + perUnit ) * 100 ) / 100;
 			const priceRaw = row.querySelector( '.v-price' ).value.trim();
-			// Precio en blanco = usa la sugerencia (costo + 30%) en vez de dejarlo
-			// en 0 — así el producto queda con un precio de venta utilizable
-			// aunque todavía no se haya decidido el precio final.
-			const price = '' !== priceRaw ? parseFloat( priceRaw ) || 0 : Math.round( cost * SUGGESTED_MARGIN );
+			// Precio en blanco = usa la sugerencia (costo + 30%, ver
+			// suggestedPrice) en vez de dejarlo en 0 — así el producto queda
+			// con un precio de venta utilizable aunque todavía no se haya
+			// decidido el precio final.
+			const price = '' !== priceRaw ? parseFloat( priceRaw ) || 0 : suggestedPrice( baseCost, perUnit );
 			return {
 				id: formVariants[ i ].id,
 				size: row.querySelector( '.v-size' ).value.trim(),

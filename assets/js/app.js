@@ -4,7 +4,7 @@
 // número cada vez que se toca alguno de estos archivos.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
-import { renderProductos } from './screens/productos.js?v=5';
+import { renderProductos } from './screens/productos.js?v=6';
 import { renderVentas } from './screens/ventas.js?v=4';
 import { renderDashboard } from './screens/dashboard.js?v=4';
 import { renderConfiguracion } from './screens/configuracion.js?v=3';
@@ -140,8 +140,12 @@ async function handleLogin( email, pin ) {
 		setState( { loginBusy: false, loginError: 'Correo o PIN incorrecto.' } );
 		return;
 	}
-	setState( { loginBusy: false } );
+	// loginBusy se apaga DESPUÉS de loadMemberships (no antes) — si no, hay
+	// un instante donde ya no está "cargando" pero todavía seguimos en la
+	// pantalla de login (loadMemberships aún no cambió de pantalla), y se ve
+	// como un parpadeo del login completo antes de saltar a la siguiente.
 	await loadMemberships( data.user.id );
+	setState( { loginBusy: false } );
 }
 
 async function handleLogout() {
