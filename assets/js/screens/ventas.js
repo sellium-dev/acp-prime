@@ -150,14 +150,14 @@ export function renderVentas( main, ctx ) {
 	function salesTableHtml() {
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden">
-				<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr);gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
-					<div>Hora</div><div>Vendedor</div><div>Cliente</div><div>Ítems</div><div>Total</div>
+				<div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr);gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
+					<div>Fecha</div><div>Vendedor</div><div>Cliente</div><div>Ítems</div><div>Total</div>
 				</div>
 				${ sales
 					.map(
 						( s ) => `
-					<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr);gap:12px;padding:12px 18px;font-size:13px;border-bottom:1px solid var(--border)">
-						<div>${ new Date( s.created_at ).toLocaleTimeString( 'es-CL', { hour: '2-digit', minute: '2-digit' } ) }</div>
+					<div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr);gap:12px;padding:12px 18px;font-size:13px;border-bottom:1px solid var(--border)">
+						<div>${ formatSaleDateTime( s.created_at ) }</div>
 						<div>${ esc( memberNames.get( s.vendor_id ) || '—' ) }</div>
 						<div style="color:var(--text-muted)">${ esc( s.customer_name || '—' ) }</div>
 						<div>${ s.sale_items.reduce( ( n, it ) => n + it.quantity, 0 ) }</div>
@@ -266,6 +266,13 @@ export function renderVentas( main, ctx ) {
 
 function money( n ) {
 	return '$' + Number( n ).toLocaleString( 'es-CL', { maximumFractionDigits: 0 } );
+}
+
+function formatSaleDateTime( isoString ) {
+	const d = new Date( isoString );
+	const date = d.toLocaleDateString( 'es-CL', { day: '2-digit', month: '2-digit' } );
+	const time = d.toLocaleTimeString( 'es-CL', { hour: '2-digit', minute: '2-digit' } );
+	return `${ date } ${ time }`;
 }
 
 function esc( str ) {

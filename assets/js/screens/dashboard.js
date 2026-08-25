@@ -335,7 +335,10 @@ export function renderDashboard( main, ctx ) {
 	function topProductsHtml() {
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:24px">
-				<div style="font-size:15px;font-weight:700;margin-bottom:16px">Productos más vendidos</div>
+				<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px">
+					<div style="font-size:15px;font-weight:700">Productos más vendidos</div>
+					<div style="font-size:12px;color:var(--text-faint2, var(--text-muted))">Histórico completo</div>
+				</div>
 				<div style="display:flex;flex-direction:column;gap:4px">
 					${
 						0 === topProducts.length
@@ -415,8 +418,16 @@ export function renderDashboard( main, ctx ) {
 	}
 }
 
+// OJO: nunca usar date.toISOString() acá — convierte a UTC, así que una
+// venta hecha de noche (hora local) puede quedar registrada al día
+// SIGUIENTE en el gráfico (ej. Chile va detrás de UTC). Se arma la fecha
+// a mano con los componentes locales para que el "día" sea el mismo que
+// ve la persona en su reloj.
 function ymd( date ) {
-	return date.toISOString().slice( 0, 10 );
+	const y = date.getFullYear();
+	const m = String( date.getMonth() + 1 ).padStart( 2, '0' );
+	const d = String( date.getDate() ).padStart( 2, '0' );
+	return `${ y }-${ m }-${ d }`;
 }
 
 function date_i18n( date ) {

@@ -139,8 +139,14 @@ export function renderGastos( main, ctx ) {
 	}
 }
 
+// OJO: nunca usar date.toISOString() acá — convierte a UTC y puede correr
+// la fecha de un gasto al día siguiente si se registra de noche (hora
+// local). Se arma a mano con los componentes locales.
 function ymd( date ) {
-	return date.toISOString().slice( 0, 10 );
+	const y = date.getFullYear();
+	const m = String( date.getMonth() + 1 ).padStart( 2, '0' );
+	const d = String( date.getDate() ).padStart( 2, '0' );
+	return `${ y }-${ m }-${ d }`;
 }
 
 function money( n ) {

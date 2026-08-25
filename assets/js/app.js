@@ -5,10 +5,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
 import { renderProductos } from './screens/productos.js?v=12';
-import { renderVentas } from './screens/ventas.js?v=4';
-import { renderDashboard } from './screens/dashboard.js?v=7';
+import { renderVentas } from './screens/ventas.js?v=5';
+import { renderDashboard } from './screens/dashboard.js?v=8';
 import { renderConfiguracion } from './screens/configuracion.js?v=4';
-import { renderGastos } from './screens/gastos.js?v=3';
+import { renderGastos } from './screens/gastos.js?v=4';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
