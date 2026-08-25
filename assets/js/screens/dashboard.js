@@ -5,6 +5,7 @@
 const VENDOR_COLORS = [ '#3987e5', '#199e70', '#c98500', '#9085e9', '#e66767' ];
 const CHART_DAYS = 14;
 const TOP_PRODUCTS_LIMIT = 5;
+const TOP_PRODUCTS_RECENT_DAYS = 30;
 const DEFAULT_LOW_STOCK_THRESHOLD = 1; // por si algún producto viejo no tiene el campo
 const MAX_STOCK_ITEMS_PER_KIND = 2;
 
@@ -22,7 +23,9 @@ export function renderDashboard( main, ctx ) {
 	let stats = null;
 	let chartDays = [];
 	let chartVendors = [];
-	let topProducts = [];
+	let topProductsAllTime = [];
+	let topProductsRecent = [];
+	let topProductsRange = 'historico'; // 'historico' | 'reciente'
 	let recommendations = [];
 	let errorMsg = '';
 
@@ -55,7 +58,7 @@ export function renderDashboard( main, ctx ) {
 				.gte( 'created_at', earliestNeeded.toISOString() ),
 			supabase
 				.from( 'sale_items' )
-				.select( 'quantity, unit_price, product_variants ( product_id, products ( name ) )' )
+				.select( 'quantity, unit_price, product_variants ( product_id, products ( name ) ), sales ( created_at )' )
 				.eq( 'organization_id', org.id ),
 			supabase
 				.from( 'expenses' )
@@ -146,25 +149,35 @@ export function renderDashboard( main, ctx ) {
 		draw();
 	}
 
-	// Todas las ventas históricas, no solo las del rango que carga el
-	// gráfico — mismo criterio que "Productos más vendidos" en ACP Core.
+	// Calcula el ranking dos veces: todo el historial (mismo criterio que
+	// "Productos más vendidos" en ACP Core) y solo los últimos N días — el
+	// selector de la UI elige cuál mostrar, ambos ya quedan calculados acá
+	// para que cambiar de uno a otro sea instantáneo (sin ir a la red).
 	function buildTopProducts( items ) {
-		const byProduct = new Map(); // product_id -> { name, sold, revenue }
+		const recentCutoff = new Date();
+		recentCutoff.setDate( recentCutoff.getDate() - ( TOP_PRODUCTS_RECENT_DAYS - 1 ) );
+		recentCutoff.setHours( 0, 0, 0, 0 );
 
-		items.forEach( ( it ) => {
-			const productId = it.product_variants?.product_id;
-			const name = it.product_variants?.products?.name;
-			if ( ! productId || ! name ) return;
+		function aggregate( list ) {
+			const byProduct = new Map(); // product_id -> { name, sold, revenue }
+			list.forEach( ( it ) => {
+				const productId = it.product_variants?.product_id;
+				const name = it.product_variants?.products?.name;
+				if ( ! productId || ! name ) return;
 
-			const entry = byProduct.get( productId ) || { name, sold: 0, revenue: 0 };
-			entry.sold += it.quantity;
-			entry.revenue += it.quantity * it.unit_price;
-			byProduct.set( productId, entry );
-		} );
+				const entry = byProduct.get( productId ) || { name, sold: 0, revenue: 0 };
+				entry.sold += it.quantity;
+				entry.revenue += it.quantity * it.unit_price;
+				byProduct.set( productId, entry );
+			} );
 
-		topProducts = Array.from( byProduct.values() )
-			.sort( ( a, b ) => b.sold - a.sold )
-			.slice( 0, TOP_PRODUCTS_LIMIT );
+			return Array.from( byProduct.values() )
+				.sort( ( a, b ) => b.sold - a.sold )
+				.slice( 0, TOP_PRODUCTS_LIMIT );
+		}
+
+		topProductsAllTime = aggregate( items );
+		topProductsRecent = aggregate( items.filter( ( it ) => it.sales?.created_at && new Date( it.sales.created_at ) >= recentCutoff ) );
 	}
 
 	// Adaptación del "Centro de Recomendaciones" de ACP Core (WordPress) —
@@ -279,6 +292,13 @@ export function renderDashboard( main, ctx ) {
 				navigateTo( el.dataset.goto, params );
 			} );
 		} );
+
+		main.querySelectorAll( '.tp-range-btn' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				topProductsRange = btn.dataset.range;
+				draw();
+			} );
+		} );
 	}
 
 	function statCard( label, value, hint, goto, params, color ) {
@@ -333,17 +353,21 @@ export function renderDashboard( main, ctx ) {
 	}
 
 	function topProductsHtml() {
+		const activeProducts = 'reciente' === topProductsRange ? topProductsRecent : topProductsAllTime;
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:24px">
-				<div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px">
+				<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
 					<div style="font-size:15px;font-weight:700">Productos más vendidos</div>
-					<div style="font-size:12px;color:var(--text-faint2, var(--text-muted))">Histórico completo</div>
+					<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
+						<button type="button" class="tp-range-btn" data-range="historico" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'historico' === topProductsRange ? 'var(--accent)' : 'transparent' };color:${ 'historico' === topProductsRange ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Histórico</button>
+						<button type="button" class="tp-range-btn" data-range="reciente" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'reciente' === topProductsRange ? 'var(--accent)' : 'transparent' };color:${ 'reciente' === topProductsRange ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Últimos ${ TOP_PRODUCTS_RECENT_DAYS } días</button>
+					</div>
 				</div>
 				<div style="display:flex;flex-direction:column;gap:4px">
 					${
-						0 === topProducts.length
-							? '<div style="font-size:13px;color:var(--text-muted)">Todavía no hay ventas suficientes.</div>'
-							: topProducts
+						0 === activeProducts.length
+							? '<div style="font-size:13px;color:var(--text-muted)">Todavía no hay ventas suficientes en este rango.</div>'
+							: activeProducts
 									.map(
 										( p ) => `
 						<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
