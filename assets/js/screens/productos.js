@@ -10,6 +10,10 @@ export function renderProductos( main, ctx ) {
 	let products = [];
 	let search = '';
 	let editingProduct = null; // null = nuevo, objeto = editando
+	let formName = '';
+	let formCategory = '';
+	let formDescription = '';
+	let formLowStock = 1;
 	let formVariants = [];
 	let restockProduct = null;
 	let restockRows = [];
@@ -100,7 +104,7 @@ export function renderProductos( main, ctx ) {
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px">
 				<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px">
-					<div style="font-size:15px;font-weight:700">${ esc( product.name ) }</div>
+					<div style="font-size:15px;font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( product.name ) }</div>
 					${
 						canEditProducts
 							? `
@@ -133,12 +137,27 @@ export function renderProductos( main, ctx ) {
 
 	function openForm( product ) {
 		editingProduct = product;
+		formName = product?.name || '';
+		formCategory = product?.category || '';
+		formDescription = product?.description || '';
+		formLowStock = product?.low_stock_threshold ?? 1;
 		formVariants = product
 			? product.product_variants.map( ( v ) => ( { ...v } ) )
 			: [ emptyVariant() ];
 		errorMsg = '';
 		view = 'form';
 		draw();
+	}
+
+	// Se llama SIEMPRE antes de cualquier draw() disparado desde dentro del
+	// formulario (guardar, incluso si falla la validación) — si no, un
+	// error de validación redibuja el formulario desde estos valores
+	// desactualizados y borra (o revierte) lo que la persona ya tecleó.
+	function syncFormFieldsFromDom() {
+		formName = document.getElementById( 'p-name' ).value;
+		formCategory = document.getElementById( 'p-category' ).value;
+		formDescription = document.getElementById( 'p-description' ).value;
+		formLowStock = document.getElementById( 'p-low-stock' ).value;
 	}
 
 	function emptyVariant() {
@@ -331,20 +350,20 @@ export function renderProductos( main, ctx ) {
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:720px">
 				<div class="acp-field">
 					<label>Nombre</label>
-					<input id="p-name" value="${ escAttr( editingProduct?.name || '' ) }" />
+					<input id="p-name" value="${ escAttr( formName ) }" />
 				</div>
 				<div class="acp-field" style="position:relative">
 					<label>Categoría</label>
-					<input id="p-category" autocomplete="off" placeholder="Elige una o escribe una nueva" value="${ escAttr( editingProduct?.category || '' ) }" />
+					<input id="p-category" autocomplete="off" placeholder="Elige una o escribe una nueva" value="${ escAttr( formCategory ) }" />
 					<div id="p-category-suggestions" class="acp-suggestions" style="display:none"></div>
 				</div>
 				<div class="acp-field">
 					<label>Descripción (opcional)</label>
-					<input id="p-description" value="${ escAttr( editingProduct?.description || '' ) }" />
+					<input id="p-description" value="${ escAttr( formDescription ) }" />
 				</div>
 				<div class="acp-field" style="max-width:200px">
 					<label>Stock mínimo</label>
-					<input id="p-low-stock" type="number" min="0" step="1" value="${ escAttr( editingProduct?.low_stock_threshold ?? 1 ) }" />
+					<input id="p-low-stock" type="number" min="0" step="1" value="${ escAttr( formLowStock ) }" />
 					<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Debajo de esto, avisa en el Dashboard que el stock está bajo.</div>
 				</div>
 
@@ -576,10 +595,16 @@ export function renderProductos( main, ctx ) {
 	}
 
 	async function handleSave() {
-		const name = document.getElementById( 'p-name' ).value.trim();
-		const category = document.getElementById( 'p-category' ).value;
-		const description = document.getElementById( 'p-description' ).value.trim();
-		const lowStockThreshold = parseInt( document.getElementById( 'p-low-stock' ).value, 10 );
+		// Antes de cualquier chance de que la validación falle y dispare un
+		// draw(): guarda lo que hay en el DOM ahora mismo, para que si el
+		// formulario se redibuja por un error, no pierda ni revierta nada.
+		syncFormFieldsFromDom();
+		syncFormVariantsFromDom();
+
+		const name = formName.trim();
+		const category = formCategory;
+		const description = formDescription.trim();
+		const lowStockThreshold = parseInt( formLowStock, 10 );
 		const variants = readVariantsFromDom();
 
 		if ( '' === name ) {

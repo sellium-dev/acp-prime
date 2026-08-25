@@ -318,6 +318,9 @@
 		flex-direction: row;
 		flex-wrap: wrap;
 	}
+	.acp-nav__item {
+		width: auto;
+	}
 	.acp-sidebar__user {
 		border-top: none;
 		margin-left: auto;
