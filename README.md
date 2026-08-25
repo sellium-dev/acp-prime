@@ -77,6 +77,12 @@ que ya existe.
   Productos esté habilitado, un vendedor solo puede ver el catálogo y
   cargar productos nuevos — nunca editar el stock/precio de uno existente,
   eso queda reservado a administrador sin excepción.
+- **`007_margen_sugerido.sql`**: agrega `organizations.suggested_margin_percent`
+  (0 a 100, default 30) — el % que se usa para sugerir precio en "Nuevo
+  producto" y "Reponer stock" cuando el precio se deja en blanco, editable
+  por el administrador desde Configuración → Precios. También repone la
+  política de `update` sobre `organizations` que la `006` había quitado
+  (ya no hacía falta ahí, pero sí para este campo).
 
 ## Variables de entorno del frontend
 

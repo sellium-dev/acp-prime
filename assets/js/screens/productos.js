@@ -1,8 +1,11 @@
 const CATEGORIES = [ 'Poleras/Camisetas', 'Shorts', 'Pantalones/Joggers', 'Zapatillas', 'Accesorios' ];
-const SUGGESTED_MARGIN = 1.3; // costo + 30%, solo para sugerir un precio de partida
+const DEFAULT_MARGIN_PERCENT = 30;
 
 export function renderProductos( main, ctx ) {
 	const { supabase, org, canCreateProducts, canEditProducts } = ctx;
+	// costo + este % = precio sugerido, configurable por empresa en Configuración
+	const marginPercent = org.suggested_margin_percent ?? DEFAULT_MARGIN_PERCENT;
+	const SUGGESTED_MARGIN = 1 + marginPercent / 100;
 	let view = 'list';
 	let products = [];
 	let search = '';
@@ -256,7 +259,7 @@ export function renderProductos( main, ctx ) {
 				hint.textContent =
 					`Quedará en ${ newStock } unidades` +
 					( perUnit > 0 ? ` · costo final ${ money( finalCost ) }` : '' ) +
-					` · precio sugerido ${ money( suggested ) } (30%)`;
+					` · precio sugerido ${ money( suggested ) } (${ marginPercent }%)`;
 			} else {
 				hint.textContent = '';
 			}
@@ -350,7 +353,7 @@ export function renderProductos( main, ctx ) {
 					</div>
 					<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);cursor:pointer;margin-bottom:8px">
 						<input type="checkbox" id="p-shipping-margin" style="margin:0" />
-						Aplicar el 30% de ganancia también al costo de envío
+						Aplicar el ${ marginPercent }% de ganancia también al costo de envío
 					</label>
 					<div id="p-shipping-summary" style="font-size:12px;color:var(--text-muted)"></div>
 				</div>
@@ -421,10 +424,10 @@ export function renderProductos( main, ctx ) {
 		return { shippingCost, totalUnits, perUnit: totalUnits > 0 ? shippingCost / totalUnits : 0 };
 	}
 
-	// El checkbox decide si el 30% de ganancia también se calcula sobre la
+	// El checkbox decide si el % de ganancia también se calcula sobre la
 	// parte de envío, o si el envío se traspasa "a costo" (sin margen) y
-	// solo el costo del producto lleva el 30% — el usuario no tenía claro
-	// cuál es más correcto para su negocio, así que queda como opción.
+	// solo el costo del producto lleva el margen — el usuario no tenía
+	// claro cuál es más correcto para su negocio, así que queda como opción.
 	function marginAppliesToShipping() {
 		const checkbox = document.getElementById( 'p-shipping-margin' );
 		return !! ( checkbox && checkbox.checked );
@@ -551,7 +554,7 @@ export function renderProductos( main, ctx ) {
 			const baseCost = parseFloat( row.querySelector( '.v-cost' ).value ) || 0;
 			const cost = Math.round( ( baseCost + perUnit ) * 100 ) / 100;
 			const priceRaw = row.querySelector( '.v-price' ).value.trim();
-			// Precio en blanco = usa la sugerencia (costo + 30%, ver
+			// Precio en blanco = usa la sugerencia (costo + % configurado, ver
 			// suggestedPrice) en vez de dejarlo en 0 — así el producto queda
 			// con un precio de venta utilizable aunque todavía no se haya
 			// decidido el precio final.

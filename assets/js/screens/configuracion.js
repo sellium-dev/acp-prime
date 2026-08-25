@@ -16,9 +16,10 @@ export function renderConfiguracion( main, ctx ) {
 	let saving = false;
 	let errorMsg = '';
 	let successMsg = '';
-	let activeTab = 'usuarios'; // 'usuarios' | 'permisos'
+	let activeTab = 'usuarios'; // 'usuarios' | 'permisos' | 'precios'
 	let selectedVendorId = null;
 	let savingPermission = null; // key del toggle que está guardando ahora mismo
+	let savingMargin = false;
 
 	load();
 
@@ -60,7 +61,9 @@ export function renderConfiguracion( main, ctx ) {
 				isAdmin
 					? 'permisos' === activeTab
 						? permissionsSectionHtml()
-						: membersSectionHtml()
+						: 'precios' === activeTab
+							? precioSectionHtml()
+							: membersSectionHtml()
 					: '<div class="acp-empty-state">No hay ajustes disponibles para tu rol.</div>'
 			}
 		`;
@@ -69,6 +72,8 @@ export function renderConfiguracion( main, ctx ) {
 			wireTabs();
 			if ( 'permisos' === activeTab ) {
 				wirePermissionsSection();
+			} else if ( 'precios' === activeTab ) {
+				wirePrecioSection();
 			} else {
 				wireMembersSection();
 			}
@@ -76,12 +81,74 @@ export function renderConfiguracion( main, ctx ) {
 	}
 
 	function tabsHtml() {
+		const tabs = [
+			[ 'usuarios', 'Usuarios' ],
+			[ 'permisos', 'Permisos' ],
+			[ 'precios', 'Precios' ],
+		];
 		return `
 			<div style="display:flex;gap:4px;margin-bottom:24px;background:var(--input-bg);border-radius:9px;padding:3px;max-width:320px">
-				<button type="button" class="acp-mode-btn" data-tab="usuarios" style="flex:1;padding:8px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'usuarios' === activeTab ? 'var(--accent)' : 'transparent' };color:${ 'usuarios' === activeTab ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Usuarios</button>
-				<button type="button" class="acp-mode-btn" data-tab="permisos" style="flex:1;padding:8px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'permisos' === activeTab ? 'var(--accent)' : 'transparent' };color:${ 'permisos' === activeTab ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Permisos</button>
+				${ tabs
+					.map(
+						( [ id, label ] ) => `
+					<button type="button" class="acp-mode-btn" data-tab="${ id }" style="flex:1;padding:8px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ id === activeTab ? 'var(--accent)' : 'transparent' };color:${ id === activeTab ? 'var(--accent-contrast)' : 'var(--text-muted)' }">${ label }</button>
+				`
+					)
+					.join( '' ) }
 			</div>
 		`;
+	}
+
+	function precioSectionHtml() {
+		const currentPercent = org.suggested_margin_percent ?? 30;
+		return `
+			<div style="font-size:15px;font-weight:700;margin-bottom:6px">% de ganancia sugerido</div>
+			<div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;max-width:480px">
+				Cuando cargas un producto o repones stock y dejas el precio en blanco, se sugiere costo + este porcentaje. Solo afecta la sugerencia — siempre puedes escribir el precio que quieras.
+			</div>
+			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;max-width:320px">
+				<div class="acp-field" style="margin-bottom:14px">
+					<label>Porcentaje (0 a 100)</label>
+					<input id="c-margin" type="number" min="0" max="100" step="1" value="${ esc( currentPercent ) }" />
+				</div>
+				<button type="button" class="acp-btn-primary" id="c-margin-save" ${ savingMargin ? 'disabled' : '' } style="width:auto;padding:10px 20px">
+					${ savingMargin ? 'Guardando…' : 'Guardar' }
+				</button>
+			</div>
+		`;
+	}
+
+	function wirePrecioSection() {
+		document.getElementById( 'c-margin-save' ).addEventListener( 'click', handleSaveMargin );
+	}
+
+	async function handleSaveMargin() {
+		const raw = document.getElementById( 'c-margin' ).value.trim();
+		const value = Math.round( Number( raw ) );
+
+		if ( '' === raw || Number.isNaN( value ) || value < 0 || value > 100 ) {
+			errorMsg = 'El porcentaje debe ser un número entre 0 y 100.';
+			draw();
+			return;
+		}
+
+		savingMargin = true;
+		errorMsg = '';
+		draw();
+
+		const { error } = await supabase.from( 'organizations' ).update( { suggested_margin_percent: value } ).eq( 'id', org.id );
+
+		savingMargin = false;
+
+		if ( error ) {
+			errorMsg = 'No se pudo guardar: ' + error.message;
+			draw();
+			return;
+		}
+
+		org.suggested_margin_percent = value;
+		successMsg = 'Porcentaje actualizado.';
+		draw();
 	}
 
 	function wireTabs() {

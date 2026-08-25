@@ -4,10 +4,10 @@
 // número cada vez que se toca alguno de estos archivos.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
-import { renderProductos } from './screens/productos.js?v=9';
+import { renderProductos } from './screens/productos.js?v=10';
 import { renderVentas } from './screens/ventas.js?v=4';
 import { renderDashboard } from './screens/dashboard.js?v=4';
-import { renderConfiguracion } from './screens/configuracion.js?v=3';
+import { renderConfiguracion } from './screens/configuracion.js?v=4';
 import { renderGastos } from './screens/gastos.js?v=3';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -90,7 +90,7 @@ async function loadMemberships( userId ) {
 	// hizo más lento el login recién.
 	const { data, error } = await supabase
 		.from( 'memberships' )
-		.select( 'id, user_id, role, full_name, organization_id, vendor_permissions, organizations ( id, name, slug )' )
+		.select( 'id, user_id, role, full_name, organization_id, vendor_permissions, organizations ( id, name, slug, suggested_margin_percent )' )
 		.eq( 'user_id', userId );
 
 	if ( error ) {
