@@ -150,6 +150,7 @@ export function renderProductos( main, ctx ) {
 			color: v.color,
 			stock_quantity: v.stock_quantity,
 			cost: v.cost,
+			price: v.price,
 		} ) );
 		errorMsg = '';
 		view = 'restock';
@@ -177,10 +178,11 @@ export function renderProductos( main, ctx ) {
 						.map(
 							( r, i ) => `
 						<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px" data-restock-row="${ i }">
-							<div style="font-size:13px;font-weight:600;margin-bottom:8px">${ esc( r.size ) }${ r.color ? ' · ' + esc( r.color ) : '' } <span style="font-weight:400;color:var(--text-muted)">— stock actual ${ r.stock_quantity }</span></div>
-							<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px">
+							<div style="font-size:13px;font-weight:600;margin-bottom:8px">${ esc( r.size ) }${ r.color ? ' · ' + esc( r.color ) : '' } <span style="font-weight:400;color:var(--text-muted)">— stock actual ${ r.stock_quantity }, precio actual ${ money( r.price ) }</span></div>
+							<div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px">
 								<input placeholder="Cantidad a agregar" class="r-qty" type="number" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 								<input placeholder="Costo" class="r-cost" type="number" step="0.01" value="${ escAttr( r.cost ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+								<input placeholder="Precio" class="r-price" type="number" step="0.01" value="${ escAttr( r.price ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 							</div>
 							<div class="r-hint" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
 						</div>
@@ -217,7 +219,7 @@ export function renderProductos( main, ctx ) {
 		} );
 
 		main.addEventListener( 'input', ( e ) => {
-			if ( e.target.matches( '.r-qty, .r-cost, #r-shipping-cost' ) ) {
+			if ( e.target.matches( '.r-qty, .r-cost, .r-price, #r-shipping-cost' ) ) {
 				updateRestockHints();
 			}
 		} );
@@ -250,7 +252,11 @@ export function renderProductos( main, ctx ) {
 			if ( addQty > 0 ) {
 				const finalCost = baseCost + perUnit;
 				const newStock = restockRows[ i ].stock_quantity + addQty;
-				hint.textContent = `Quedará en ${ newStock } unidades` + ( perUnit > 0 ? ` · costo final ${ money( finalCost ) }` : '' );
+				const suggested = Math.round( finalCost * SUGGESTED_MARGIN );
+				hint.textContent =
+					`Quedará en ${ newStock } unidades` +
+					( perUnit > 0 ? ` · costo final ${ money( finalCost ) }` : '' ) +
+					` · precio sugerido ${ money( suggested ) } (30%)`;
 			} else {
 				hint.textContent = '';
 			}
@@ -277,10 +283,12 @@ export function renderProductos( main, ctx ) {
 			if ( addQty <= 0 ) return;
 			const baseCost = parseFloat( row.querySelector( '.r-cost' ).value ) || 0;
 			const cost = Math.round( ( baseCost + perUnit ) * 100 ) / 100;
+			const price = parseFloat( row.querySelector( '.r-price' ).value ) || 0;
 			updates.push( {
 				id: restockRows[ i ].id,
 				stock_quantity: restockRows[ i ].stock_quantity + addQty,
 				cost,
+				price,
 			} );
 		} );
 
@@ -297,7 +305,7 @@ export function renderProductos( main, ctx ) {
 			for ( const u of updates ) {
 				const { error } = await supabase
 					.from( 'product_variants' )
-					.update( { stock_quantity: u.stock_quantity, cost: u.cost } )
+					.update( { stock_quantity: u.stock_quantity, cost: u.cost, price: u.price } )
 					.eq( 'id', u.id );
 				if ( error ) throw error;
 			}
