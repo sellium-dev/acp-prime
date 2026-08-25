@@ -22,7 +22,7 @@ export function renderProductos( main, ctx ) {
 		main.innerHTML = loadingHtml();
 		const { data, error } = await supabase
 			.from( 'products' )
-			.select( 'id, name, category, description, active, product_variants ( id, size, color, sku, price, cost, stock_quantity )' )
+			.select( 'id, name, category, description, active, low_stock_threshold, product_variants ( id, size, color, sku, price, cost, stock_quantity )' )
 			.eq( 'organization_id', org.id )
 			.order( 'created_at', { ascending: false } );
 
@@ -112,7 +112,7 @@ export function renderProductos( main, ctx ) {
 							: ''
 					}
 				</div>
-				<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">${ esc( product.category ) } · ${ totalStock } en stock</div>
+				<div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">${ esc( product.category ) } · ${ totalStock } en stock · mínimo ${ product.low_stock_threshold }</div>
 				<div style="display:flex;flex-direction:column;gap:6px">
 					${ variants
 						.map(
@@ -341,6 +341,11 @@ export function renderProductos( main, ctx ) {
 				<div class="acp-field">
 					<label>Descripción (opcional)</label>
 					<input id="p-description" value="${ escAttr( editingProduct?.description || '' ) }" />
+				</div>
+				<div class="acp-field" style="max-width:200px">
+					<label>Stock mínimo</label>
+					<input id="p-low-stock" type="number" min="0" step="1" value="${ escAttr( editingProduct?.low_stock_threshold ?? 10 ) }" />
+					<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Debajo de esto, avisa en el Dashboard que el stock está bajo.</div>
 				</div>
 
 				<div style="font-size:13px;font-weight:700;margin:20px 0 10px">Variantes (talla o modelo / color)</div>
@@ -574,6 +579,7 @@ export function renderProductos( main, ctx ) {
 		const name = document.getElementById( 'p-name' ).value.trim();
 		const category = document.getElementById( 'p-category' ).value;
 		const description = document.getElementById( 'p-description' ).value.trim();
+		const lowStockThreshold = parseInt( document.getElementById( 'p-low-stock' ).value, 10 );
 		const variants = readVariantsFromDom();
 
 		if ( '' === name ) {
@@ -583,6 +589,11 @@ export function renderProductos( main, ctx ) {
 		}
 		if ( variants.some( ( v ) => '' === v.size ) ) {
 			errorMsg = 'Todas las variantes necesitan una talla o modelo.';
+			draw();
+			return;
+		}
+		if ( Number.isNaN( lowStockThreshold ) || lowStockThreshold < 0 ) {
+			errorMsg = 'El stock mínimo debe ser un número igual o mayor a 0.';
 			draw();
 			return;
 		}
@@ -596,13 +607,13 @@ export function renderProductos( main, ctx ) {
 			if ( productId ) {
 				const { error } = await supabase
 					.from( 'products' )
-					.update( { name, category, description: description || null } )
+					.update( { name, category, description: description || null, low_stock_threshold: lowStockThreshold } )
 					.eq( 'id', productId );
 				if ( error ) throw error;
 			} else {
 				const { data, error } = await supabase
 					.from( 'products' )
-					.insert( { organization_id: org.id, name, category, description: description || null } )
+					.insert( { organization_id: org.id, name, category, description: description || null, low_stock_threshold: lowStockThreshold } )
 					.select( 'id' )
 					.single();
 				if ( error ) throw error;

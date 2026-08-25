@@ -83,6 +83,11 @@ que ya existe.
   por el administrador desde Configuración → Precios. También repone la
   política de `update` sobre `organizations` que la `006` había quitado
   (ya no hacía falta ahí, pero sí para este campo).
+- **`008_stock_minimo.sql`**: agrega `products.low_stock_threshold` (default
+  10) — cuántas unidades es "poco" para ese producto en particular, editable
+  desde "Nuevo producto"/"Editar producto". El Centro de Recomendaciones del
+  Dashboard usa este número (por producto, aplicado a todas sus variantes)
+  en vez de un 10 fijo para todos.
 
 ## Variables de entorno del frontend
 

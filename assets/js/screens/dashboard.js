@@ -5,7 +5,7 @@
 const VENDOR_COLORS = [ '#3987e5', '#199e70', '#c98500', '#9085e9', '#e66767' ];
 const CHART_DAYS = 14;
 const TOP_PRODUCTS_LIMIT = 5;
-const LOW_STOCK_THRESHOLD = 10;
+const DEFAULT_LOW_STOCK_THRESHOLD = 10; // por si algún producto viejo no tiene el campo
 const MAX_STOCK_ITEMS_PER_KIND = 2;
 
 // Mismos colores que usa el "Centro de Recomendaciones" de ACP Core (WordPress)
@@ -47,7 +47,7 @@ export function renderDashboard( main, ctx ) {
 		const earliestNeeded = new Date( Math.min( chartStart, startOfMonth, startOfLastMonth ) );
 
 		const [ variantsRes, salesRes, topSalesRes, expensesRes, membersRes ] = await Promise.all( [
-			supabase.from( 'product_variants' ).select( 'size, color, cost, price, stock_quantity, products ( name )' ).eq( 'organization_id', org.id ),
+			supabase.from( 'product_variants' ).select( 'size, color, cost, price, stock_quantity, products ( name, low_stock_threshold )' ).eq( 'organization_id', org.id ),
 			supabase
 				.from( 'sales' )
 				.select( 'created_at, vendor_id, sale_items ( quantity, unit_price, unit_cost )' )
@@ -80,10 +80,11 @@ export function renderDashboard( main, ctx ) {
 			potentialProfit += ( v.price - v.cost ) * v.stock_quantity;
 
 			const label = ( v.products?.name || 'Producto' ) + ( v.size ? ` (${ v.size }${ v.color ? ' · ' + v.color : '' })` : '' );
+			const threshold = v.products?.low_stock_threshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
 			if ( 0 === v.stock_quantity ) {
 				outOfStockVariants.push( label );
-			} else if ( v.stock_quantity < LOW_STOCK_THRESHOLD ) {
-				criticalVariants.push( label );
+			} else if ( v.stock_quantity < threshold ) {
+				criticalVariants.push( { label, threshold } );
 			}
 		} );
 
@@ -177,8 +178,8 @@ export function renderDashboard( main, ctx ) {
 		if ( 0 === criticalVariants.length && 0 === outOfStockVariants.length ) {
 			recs.push( { severity: 'success', text: 'Todo el stock está en niveles normales.' } );
 		} else {
-			criticalVariants.slice( 0, MAX_STOCK_ITEMS_PER_KIND ).forEach( ( label ) => {
-				recs.push( { severity: 'warning', text: `"${ label }" tiene menos de ${ LOW_STOCK_THRESHOLD } unidades.` } );
+			criticalVariants.slice( 0, MAX_STOCK_ITEMS_PER_KIND ).forEach( ( { label, threshold } ) => {
+				recs.push( { severity: 'warning', text: `"${ label }" tiene menos de ${ threshold } unidades.` } );
 			} );
 			outOfStockVariants.slice( 0, MAX_STOCK_ITEMS_PER_KIND ).forEach( ( label ) => {
 				recs.push( { severity: 'danger', text: `"${ label }" está agotado.` } );
