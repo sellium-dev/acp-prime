@@ -280,13 +280,17 @@ export function renderProductos( main, ctx ) {
 		wrap.innerHTML = formVariants
 			.map(
 				( v, i ) => `
-			<div style="display:grid;grid-template-columns:repeat(5, minmax(0, 1fr)) auto;gap:8px;margin-bottom:8px;align-items:center" data-row="${ i }">
-				<input placeholder="Talla" class="v-size" value="${ escAttr( v.size ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
-				<input placeholder="Color" class="v-color" value="${ escAttr( v.color || '' ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
-				<input placeholder="Costo" class="v-cost" type="number" step="0.01" value="${ escAttr( v.cost ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
-				<input placeholder="Precio" class="v-price" type="number" step="0.01" value="${ escAttr( v.price ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
-				<input placeholder="Stock" class="v-stock" type="number" value="${ escAttr( v.stock_quantity ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
-				<button type="button" class="v-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px">&times;</button>
+			<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px" data-row="${ i }">
+				<div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr)) auto;gap:8px;margin-bottom:8px;align-items:center">
+					<input placeholder="Talla" class="v-size" value="${ escAttr( v.size ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+					<input placeholder="Color" class="v-color" value="${ escAttr( v.color || '' ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+					<input placeholder="Costo" class="v-cost" type="number" step="0.01" value="${ escAttr( v.cost ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+					<button type="button" class="v-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px">&times;</button>
+				</div>
+				<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px">
+					<input placeholder="Precio" class="v-price" type="number" step="0.01" value="${ escAttr( v.price ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+					<input placeholder="Stock" class="v-stock" type="number" value="${ escAttr( v.stock_quantity ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+				</div>
 			</div>
 		`
 			)
