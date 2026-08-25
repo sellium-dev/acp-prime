@@ -4,12 +4,26 @@
 // el resto de la app) y usarlo de nuevo como color de serie confundiría.
 const VENDOR_COLORS = [ '#3987e5', '#199e70', '#c98500', '#9085e9', '#e66767' ];
 const CHART_DAYS = 14;
+const TOP_PRODUCTS_LIMIT = 5;
+const LOW_STOCK_THRESHOLD = 10;
+const MAX_STOCK_ITEMS_PER_KIND = 2;
+
+// Mismos colores que usa el "Centro de Recomendaciones" de ACP Core (WordPress)
+// — se reutilizan tal cual para que la idea se sienta igual entre las dos apps.
+const SEVERITY_COLOR = {
+	success: 'oklch(0.72 0.16 152)',
+	warning: 'oklch(0.75 0.16 95)',
+	danger: 'oklch(0.68 0.18 25)',
+	info: 'oklch(0.72 0.13 230)',
+};
 
 export function renderDashboard( main, ctx ) {
 	const { supabase, org, navigateTo, canSeeProductos, canSeeGastos } = ctx;
 	let stats = null;
 	let chartDays = [];
 	let chartVendors = [];
+	let topProducts = [];
+	let recommendations = [];
 	let errorMsg = '';
 
 	load();
@@ -20,20 +34,29 @@ export function renderDashboard( main, ctx ) {
 		const startOfMonth = new Date();
 		startOfMonth.setDate( 1 );
 		startOfMonth.setHours( 0, 0, 0, 0 );
+		const startOfLastMonth = new Date( startOfMonth );
+		startOfLastMonth.setMonth( startOfLastMonth.getMonth() - 1 );
 		const startOfDay = new Date();
 		startOfDay.setHours( 0, 0, 0, 0 );
 		const chartStart = new Date();
 		chartStart.setDate( chartStart.getDate() - ( CHART_DAYS - 1 ) );
 		chartStart.setHours( 0, 0, 0, 0 );
-		const earliestNeeded = chartStart < startOfMonth ? chartStart : startOfMonth;
+		// La ventana de la consulta de ventas tiene que cubrir lo que pida el
+		// rango más amplio de los tres: el gráfico, el mes actual, o la
+		// comparación con el mes pasado (para "ventas creciendo").
+		const earliestNeeded = new Date( Math.min( chartStart, startOfMonth, startOfLastMonth ) );
 
-		const [ variantsRes, salesRes, expensesRes, membersRes ] = await Promise.all( [
-			supabase.from( 'product_variants' ).select( 'cost, price, stock_quantity' ).eq( 'organization_id', org.id ),
+		const [ variantsRes, salesRes, topSalesRes, expensesRes, membersRes ] = await Promise.all( [
+			supabase.from( 'product_variants' ).select( 'size, color, cost, price, stock_quantity, products ( name )' ).eq( 'organization_id', org.id ),
 			supabase
 				.from( 'sales' )
 				.select( 'created_at, vendor_id, sale_items ( quantity, unit_price, unit_cost )' )
 				.eq( 'organization_id', org.id )
 				.gte( 'created_at', earliestNeeded.toISOString() ),
+			supabase
+				.from( 'sale_items' )
+				.select( 'quantity, unit_price, product_variants ( product_id, products ( name ) )' )
+				.eq( 'organization_id', org.id ),
 			supabase
 				.from( 'expenses' )
 				.select( 'amount' )
@@ -42,17 +65,26 @@ export function renderDashboard( main, ctx ) {
 			supabase.from( 'memberships' ).select( 'user_id, full_name' ).eq( 'organization_id', org.id ),
 		] );
 
-		if ( variantsRes.error || salesRes.error || expensesRes.error ) {
-			errorMsg = 'No se pudo cargar el Dashboard: ' + ( variantsRes.error || salesRes.error || expensesRes.error ).message;
+		if ( variantsRes.error || salesRes.error || topSalesRes.error || expensesRes.error ) {
+			errorMsg = 'No se pudo cargar el Dashboard: ' + ( variantsRes.error || salesRes.error || topSalesRes.error || expensesRes.error ).message;
 			draw();
 			return;
 		}
 
 		let invested = 0;
 		let potentialProfit = 0;
+		const criticalVariants = [];
+		const outOfStockVariants = [];
 		( variantsRes.data || [] ).forEach( ( v ) => {
 			invested += v.cost * v.stock_quantity;
 			potentialProfit += ( v.price - v.cost ) * v.stock_quantity;
+
+			const label = ( v.products?.name || 'Producto' ) + ( v.size ? ` (${ v.size }${ v.color ? ' · ' + v.color : '' })` : '' );
+			if ( 0 === v.stock_quantity ) {
+				outOfStockVariants.push( label );
+			} else if ( v.stock_quantity < LOW_STOCK_THRESHOLD ) {
+				criticalVariants.push( label );
+			}
 		} );
 
 		const memberNames = new Map( ( membersRes.data || [] ).map( ( m ) => [ m.user_id, m.full_name ] ) );
@@ -61,12 +93,14 @@ export function renderDashboard( main, ctx ) {
 		let todayProfit = 0;
 		let monthSold = 0;
 		let monthProfit = 0;
+		let lastMonthSold = 0;
 		const dayVendorQty = new Map(); // "YYYY-MM-DD|vendorId" -> qty
 
 		( salesRes.data || [] ).forEach( ( s ) => {
 			const saleDate = new Date( s.created_at );
 			const isToday = saleDate >= startOfDay;
 			const isThisMonth = saleDate >= startOfMonth;
+			const isLastMonth = saleDate >= startOfLastMonth && saleDate < startOfMonth;
 			const dayKey = ymd( saleDate );
 
 			( s.sale_items || [] ).forEach( ( it ) => {
@@ -75,6 +109,9 @@ export function renderDashboard( main, ctx ) {
 				if ( isThisMonth ) {
 					monthSold += sold;
 					monthProfit += profit;
+				}
+				if ( isLastMonth ) {
+					lastMonthSold += sold;
 				}
 				if ( isToday ) {
 					todaySold += sold;
@@ -96,13 +133,67 @@ export function renderDashboard( main, ctx ) {
 			todayProfit,
 			monthSold,
 			monthProfit,
+			lastMonthSold,
 			monthExpenses,
 			netMonthProfit: monthProfit - monthExpenses,
 		};
 
 		buildChartData( dayVendorQty, memberNames, chartStart );
+		buildTopProducts( topSalesRes.data || [] );
+		buildRecommendations( criticalVariants, outOfStockVariants );
 
 		draw();
+	}
+
+	// Todas las ventas históricas, no solo las del rango que carga el
+	// gráfico — mismo criterio que "Productos más vendidos" en ACP Core.
+	function buildTopProducts( items ) {
+		const byProduct = new Map(); // product_id -> { name, sold, revenue }
+
+		items.forEach( ( it ) => {
+			const productId = it.product_variants?.product_id;
+			const name = it.product_variants?.products?.name;
+			if ( ! productId || ! name ) return;
+
+			const entry = byProduct.get( productId ) || { name, sold: 0, revenue: 0 };
+			entry.sold += it.quantity;
+			entry.revenue += it.quantity * it.unit_price;
+			byProduct.set( productId, entry );
+		} );
+
+		topProducts = Array.from( byProduct.values() )
+			.sort( ( a, b ) => b.sold - a.sold )
+			.slice( 0, TOP_PRODUCTS_LIMIT );
+	}
+
+	// Adaptación del "Centro de Recomendaciones" de ACP Core (WordPress) —
+	// mismas reglas de stock/ventas donde aplican; se deja fuera la de
+	// "pedidos pendientes" porque acá una venta se registra completa, no
+	// queda un estado intermedio por despachar. Se suma una nueva sobre
+	// ganancia neta, que ACP Core no tiene porque no lleva gastos.
+	function buildRecommendations( criticalVariants, outOfStockVariants ) {
+		const recs = [];
+
+		if ( 0 === criticalVariants.length && 0 === outOfStockVariants.length ) {
+			recs.push( { severity: 'success', text: 'Todo el stock está en niveles normales.' } );
+		} else {
+			criticalVariants.slice( 0, MAX_STOCK_ITEMS_PER_KIND ).forEach( ( label ) => {
+				recs.push( { severity: 'warning', text: `"${ label }" tiene menos de ${ LOW_STOCK_THRESHOLD } unidades.` } );
+			} );
+			outOfStockVariants.slice( 0, MAX_STOCK_ITEMS_PER_KIND ).forEach( ( label ) => {
+				recs.push( { severity: 'danger', text: `"${ label }" está agotado.` } );
+			} );
+		}
+
+		if ( stats.monthSold > stats.lastMonthSold ) {
+			recs.push( { severity: 'info', text: 'Tus ventas este mes ya superaron las del mes pasado.' } );
+		}
+
+		if ( stats.netMonthProfit < 0 ) {
+			recs.push( { severity: 'danger', text: 'Los gastos de este mes superan la utilidad de las ventas — la ganancia neta va en negativo.' } );
+		}
+
+		recommendations = recs;
 	}
 
 	function buildChartData( dayVendorQty, memberNames, chartStart ) {
@@ -176,6 +267,8 @@ export function renderDashboard( main, ctx ) {
 				) }
 			</div>
 
+			${ recommendationsHtml() }
+			${ topProductsHtml() }
 			${ chartHtml() }
 		`;
 
@@ -209,6 +302,55 @@ export function renderDashboard( main, ctx ) {
 				<div style="display:flex;justify-content:space-between;align-items:baseline">
 					<span style="font-size:12px;color:var(--text-muted)">Utilidad</span>
 					<span style="font-size:15px;font-weight:700;color:oklch(0.72 0.16 152)">${ money( profit ) }</span>
+				</div>
+			</div>
+		`;
+	}
+
+	function recommendationsHtml() {
+		if ( 0 === recommendations.length ) return '';
+		return `
+			<div style="background:linear-gradient(135deg, oklch(0.22 0.03 152 / 0.5), var(--card));border:1px solid oklch(0.72 0.16 152 / 0.3);border-radius:16px;padding:24px;margin-bottom:24px">
+				<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+					<div style="font-size:16px;font-weight:800;letter-spacing:-0.01em">Centro de Recomendaciones</div>
+					<div style="font-size:11px;font-weight:700;color:oklch(0.72 0.16 152);background:oklch(0.72 0.16 152 / 0.15);padding:3px 8px;border-radius:20px">reglas activas</div>
+				</div>
+				<div style="display:flex;flex-direction:column;gap:10px">
+					${ recommendations
+						.map(
+							( rec ) => `
+						<div style="display:flex;align-items:flex-start;gap:12px;background:oklch(0.18 0.013 255 / 0.6);border-radius:10px;padding:12px 14px">
+							<div style="width:10px;height:10px;border-radius:50%;margin-top:4px;flex:0 0 auto;background:${ SEVERITY_COLOR[ rec.severity ] || SEVERITY_COLOR.info }"></div>
+							<div style="font-size:14px;color:var(--text-2, var(--text));line-height:1.5">${ esc( rec.text ) }</div>
+						</div>
+					`
+						)
+						.join( '' ) }
+				</div>
+			</div>
+		`;
+	}
+
+	function topProductsHtml() {
+		return `
+			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:24px">
+				<div style="font-size:15px;font-weight:700;margin-bottom:16px">Productos más vendidos</div>
+				<div style="display:flex;flex-direction:column;gap:4px">
+					${
+						0 === topProducts.length
+							? '<div style="font-size:13px;color:var(--text-muted)">Todavía no hay ventas suficientes.</div>'
+							: topProducts
+									.map(
+										( p ) => `
+						<div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+							<div style="flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( p.name ) }</div>
+							<div style="font-size:12px;color:var(--text-faint2, var(--text-muted))">${ p.sold } vendidos</div>
+							<div style="font-size:14px;font-weight:700">${ money( p.revenue ) }</div>
+						</div>
+					`
+									)
+									.join( '' )
+					}
 				</div>
 			</div>
 		`;
