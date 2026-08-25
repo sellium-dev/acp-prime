@@ -142,7 +142,7 @@ export function renderVentas( main, ctx ) {
 				<div style="width:24px;text-align:center">${ item.qty }</div>
 				<button type="button" class="c-plus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:6px;cursor:pointer;font-size:16px;flex:0 0 auto">+</button>
 				<div style="width:70px;text-align:right;font-weight:700">${ money( item.price * item.qty ) }</div>
-				<button type="button" class="c-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px">&times;</button>
+				<button type="button" class="c-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;width:36px;height:36px;flex:0 0 auto">&times;</button>
 			</div>
 		`;
 	}
