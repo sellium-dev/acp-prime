@@ -144,7 +144,7 @@ export function renderProductos( main, ctx ) {
 					<input id="p-description" value="${ escAttr( editingProduct?.description || '' ) }" />
 				</div>
 
-				<div style="font-size:13px;font-weight:700;margin:20px 0 10px">Variantes (talla / color)</div>
+				<div style="font-size:13px;font-weight:700;margin:20px 0 10px">Variantes (talla o modelo / color)</div>
 
 				<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px;margin-bottom:12px" id="p-shipping-toggle">+ Agregar costo de envío</button>
 				<div id="p-shipping-box" style="display:none;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;max-width:360px">
@@ -300,7 +300,7 @@ export function renderProductos( main, ctx ) {
 				( v, i ) => `
 			<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px" data-row="${ i }">
 				<div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr)) auto;gap:8px;margin-bottom:8px;align-items:center">
-					<input placeholder="Talla" class="v-size" value="${ escAttr( v.size ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+					<input placeholder="Talla/Modelo" class="v-size" value="${ escAttr( v.size ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 					<input placeholder="Color" class="v-color" value="${ escAttr( v.color || '' ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 					<input placeholder="Costo" class="v-cost" type="number" step="0.01" value="${ escAttr( v.cost ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 					<button type="button" class="v-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px">&times;</button>
@@ -383,7 +383,7 @@ export function renderProductos( main, ctx ) {
 			return;
 		}
 		if ( variants.some( ( v ) => '' === v.size ) ) {
-			errorMsg = 'Todas las variantes necesitan una talla.';
+			errorMsg = 'Todas las variantes necesitan una talla o modelo.';
 			draw();
 			return;
 		}
