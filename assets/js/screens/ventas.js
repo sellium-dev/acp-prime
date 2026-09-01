@@ -117,7 +117,7 @@ export function renderVentas( main, ctx ) {
 						}
 					</div>
 					<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;margin:14px 0">
-						<span>Total</span><span>${ money( cartTotal ) }</span>
+						<span>Total</span><span id="v-cart-total">${ money( cartTotal ) }</span>
 					</div>
 					<button type="button" class="acp-btn-primary" id="v-submit" ${ saving || 0 === cart.length ? 'disabled' : '' }>
 						${ saving ? 'Registrando…' : 'Registrar venta' }
@@ -159,16 +159,27 @@ export function renderVentas( main, ctx ) {
 
 	function cartRowHtml( item ) {
 		return `
-			<div style="display:flex;align-items:center;gap:8px;font-size:13px" data-cart="${ item.variantId }">
-				<div style="flex:1;min-width:0">
-					<div style="font-weight:600">${ esc( item.name ) }</div>
-					<div style="color:var(--text-muted)">${ esc( item.size ) }${ item.color ? ' · ' + esc( item.color ) : '' }</div>
+			<div style="border:1px solid var(--border);border-radius:10px;padding:10px" data-cart="${ item.variantId }">
+				<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+					<div style="flex:1;min-width:0">
+						<div style="font-weight:600;font-size:13px">${ esc( item.name ) }</div>
+						<div style="color:var(--text-muted);font-size:12px">${ esc( item.size ) }${ item.color ? ' · ' + esc( item.color ) : '' }</div>
+					</div>
+					<button type="button" class="c-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;width:36px;height:36px;flex:0 0 auto">&times;</button>
 				</div>
-				<button type="button" class="c-minus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:6px;cursor:pointer;font-size:16px;flex:0 0 auto">−</button>
-				<div style="width:24px;text-align:center">${ item.qty }</div>
-				<button type="button" class="c-plus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:6px;cursor:pointer;font-size:16px;flex:0 0 auto">+</button>
-				<div style="width:70px;text-align:right;font-weight:700">${ money( item.price * item.qty ) }</div>
-				<button type="button" class="c-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;width:36px;height:36px;flex:0 0 auto">&times;</button>
+				<div style="display:flex;align-items:center;gap:8px">
+					<button type="button" class="c-minus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:6px;cursor:pointer;font-size:16px;flex:0 0 auto">−</button>
+					<div style="width:22px;text-align:center;font-size:13px">${ item.qty }</div>
+					<button type="button" class="c-plus" style="background:var(--btn-secondary-bg);border:1px solid var(--border);color:var(--text);width:36px;height:36px;border-radius:6px;cursor:pointer;font-size:16px;flex:0 0 auto">+</button>
+					<input class="c-price" type="number" min="0" step="1" value="${ escAttr( item.price ) }"
+						style="flex:1;min-width:0;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+					<div class="c-subtotal" style="width:74px;text-align:right;font-weight:700;font-size:13px;flex:0 0 auto">${ money( item.price * item.qty ) }</div>
+				</div>
+				${
+					item.price !== item.catalogPrice
+						? `<div style="font-size:11px;color:var(--text-muted);margin-top:6px">Precio de lista: ${ money( item.catalogPrice ) }</div>`
+						: ''
+				}
 			</div>
 		`;
 	}
@@ -232,6 +243,22 @@ export function renderVentas( main, ctx ) {
 			row.querySelector( '.c-remove' ).addEventListener( 'click', () => removeFromCart( variantId ) );
 		} );
 
+		// Delegado y sin volver a dibujar todo — si hiciéramos draw() en cada
+		// tecla se pierde el foco del input a mitad de escribir el precio.
+		// Solo se actualiza el subtotal de esa fila y el total general; el
+		// array `cart` (fuente de verdad real) ya queda al día para cuando
+		// se guarde o se redibuje por otra razón (+/-, quitar, etc).
+		main.addEventListener( 'input', ( e ) => {
+			if ( ! e.target.matches( '.c-price' ) ) return;
+			const row = e.target.closest( '[data-cart]' );
+			const item = cart.find( ( c ) => c.variantId === row.dataset.cart );
+			if ( ! item ) return;
+			item.price = parseFloat( e.target.value ) || 0;
+			row.querySelector( '.c-subtotal' ).textContent = money( item.price * item.qty );
+			const totalEl = document.getElementById( 'v-cart-total' );
+			if ( totalEl ) totalEl.textContent = money( cart.reduce( ( sum, c ) => sum + c.price * c.qty, 0 ) );
+		} );
+
 		const submitBtn = document.getElementById( 'v-submit' );
 		if ( submitBtn ) {
 			submitBtn.addEventListener( 'click', handleSubmit );
@@ -268,7 +295,7 @@ export function renderVentas( main, ctx ) {
 		if ( existing ) {
 			if ( existing.qty < v.stock_quantity ) existing.qty += 1;
 		} else {
-			cart.push( { variantId: v.id, name: v.products.name, size: v.size, color: v.color, price: v.price, stock: v.stock_quantity, qty: 1 } );
+			cart.push( { variantId: v.id, name: v.products.name, size: v.size, color: v.color, price: v.price, catalogPrice: v.price, stock: v.stock_quantity, qty: 1 } );
 		}
 		errorMsg = '';
 		successMsg = '';
@@ -294,7 +321,14 @@ export function renderVentas( main, ctx ) {
 		// el campo de Cliente desde cero (sin recordar lo tecleado), así que
 		// si se lee después, siempre llega vacío.
 		const customerName = document.getElementById( 'v-customer' )?.value.trim() || '';
-		const items = cart.map( ( c ) => ( { variant_id: c.variantId, quantity: c.qty } ) );
+
+		if ( cart.some( ( c ) => ! Number.isFinite( c.price ) || c.price < 0 ) ) {
+			errorMsg = 'El precio de cada producto debe ser un número igual o mayor a 0.';
+			draw();
+			return;
+		}
+
+		const items = cart.map( ( c ) => ( { variant_id: c.variantId, quantity: c.qty, unit_price: c.price } ) );
 
 		saving = true;
 		errorMsg = '';

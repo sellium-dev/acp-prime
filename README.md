@@ -98,6 +98,12 @@ que ya existe.
   cada línea — el registro nunca se borra, solo cambia de estado. Pre-venta
   y crédito no cuentan como "Ventas del mes"/"Ganancia" en el Dashboard
   hasta que pasan a Pagado; mientras tanto suman al nuevo monto "Por cobrar".
+- **`010_precio_editable_venta.sql`**: `register_sale()` acepta un
+  `unit_price` opcional por línea (antes siempre usaba el precio de
+  catálogo) — permite descuentos puntuales al registrar una venta desde
+  Ventas. El costo sigue siendo el de catálogo, así que si el precio
+  manual queda por debajo del costo, la utilidad de esa línea da negativa
+  a propósito, reflejándose así en "Ganancia" del Dashboard.
 
 ## Variables de entorno del frontend
 
