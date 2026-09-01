@@ -8,9 +8,6 @@ const TOP_PRODUCTS_LIMIT = 5;
 const TOP_PRODUCTS_RECENT_DAYS = 30;
 const DEFAULT_LOW_STOCK_THRESHOLD = 1; // por si algún producto viejo no tiene el campo
 const MAX_STOCK_ITEMS_PER_KIND = 2;
-const MONTHLY_TREND_MAX_MONTHS = 12;
-const MONTHLY_TREND_DEFAULT_MONTHS = 3;
-const MONTH_LABEL_FORMAT = { month: 'short', year: '2-digit' };
 
 // Mismos colores que usa el "Centro de Recomendaciones" de ACP Core (WordPress)
 // — se reutilizan tal cual para que la idea se sienta igual entre las dos apps.
@@ -30,8 +27,6 @@ export function renderDashboard( main, ctx ) {
 	let topProductsRecent = [];
 	let topProductsRange = 'historico'; // 'historico' | 'reciente'
 	let recommendations = [];
-	let monthlyTrend = []; // hasta MONTHLY_TREND_MAX_MONTHS meses, viejo → nuevo
-	let monthlyTrendMonths = MONTHLY_TREND_DEFAULT_MONTHS;
 	let errorMsg = '';
 
 	load();
@@ -53,11 +48,6 @@ export function renderDashboard( main, ctx ) {
 		// rango más amplio de los tres: el gráfico, el mes actual, o la
 		// comparación con el mes pasado (para "ventas creciendo").
 		const earliestNeeded = new Date( Math.min( chartStart, startOfMonth, startOfLastMonth ) );
-		// Para el comparativo mensual — se trae de una vez el máximo rango que
-		// se puede seleccionar (12 meses) y el selector de 3/6/12 solo recorta
-		// ese mismo array ya calculado, sin volver a pedir nada.
-		const trendStart = new Date( startOfMonth );
-		trendStart.setMonth( trendStart.getMonth() - ( MONTHLY_TREND_MAX_MONTHS - 1 ) );
 
 		const [ variantsRes, salesRes, topSalesRes, receivableRes, voidedRes, expensesRes, membersRes ] = await Promise.all( [
 			supabase.from( 'product_variants' ).select( 'size, color, cost, price, stock_quantity, products ( name, low_stock_threshold )' ).eq( 'organization_id', org.id ),
@@ -92,7 +82,7 @@ export function renderDashboard( main, ctx ) {
 				.from( 'expenses' )
 				.select( 'amount, expense_date' )
 				.eq( 'organization_id', org.id )
-				.gte( 'expense_date', ymd( trendStart ) ),
+				.gte( 'expense_date', ymd( startOfMonth ) ),
 			supabase.from( 'memberships' ).select( 'user_id, full_name' ).eq( 'organization_id', org.id ),
 		] );
 
@@ -159,15 +149,7 @@ export function renderDashboard( main, ctx ) {
 			} );
 		} );
 
-		// expense_date es una columna "date" pura (sin hora) — comparar como
-		// string evita el mismo lío de zona horaria que ya tuvimos con
-		// toISOString() en otro lado (new Date('2026-09-01') se interpreta
-		// como medianoche UTC, no medianoche local, y puede correr el corte
-		// un día para atrás en zonas horarias detrás de UTC como Chile).
-		const startOfMonthStr = ymd( startOfMonth );
-		const monthExpenses = ( expensesRes.data || [] )
-			.filter( ( e ) => e.expense_date >= startOfMonthStr )
-			.reduce( ( sum, e ) => sum + Number( e.amount ), 0 );
+		const monthExpenses = ( expensesRes.data || [] ).reduce( ( sum, e ) => sum + Number( e.amount ), 0 );
 		const receivable = ( receivableRes.data || [] ).reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
 
 		const voidedThisMonth = ( voidedRes.data || [] ).reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
@@ -189,43 +171,8 @@ export function renderDashboard( main, ctx ) {
 		buildChartData( dayVendorQty, memberNames, chartStart );
 		buildTopProducts( topSalesRes.data || [] );
 		buildRecommendations( criticalVariants, outOfStockVariants );
-		buildMonthlyTrend( topSalesRes.data || [], expensesRes.data || [], startOfMonth );
 
 		draw();
-	}
-
-	// Ganancia neta (utilidad de ventas Pagado, menos gastos) por mes, para
-	// los últimos MONTHLY_TREND_MAX_MONTHS — se calcula todo de una vez acá
-	// y el selector 3/6/12 meses de la UI solo recorta este mismo array,
-	// sin volver a pedir nada a la red.
-	function buildMonthlyTrend( saleItems, expenses, currentMonthStart ) {
-		const months = [];
-		for ( let i = MONTHLY_TREND_MAX_MONTHS - 1; i >= 0; i-- ) {
-			const d = new Date( currentMonthStart );
-			d.setMonth( d.getMonth() - i );
-			months.push( { key: monthKey( d ), label: d.toLocaleDateString( 'es-CL', MONTH_LABEL_FORMAT ), sold: 0, profit: 0, expenses: 0 } );
-		}
-		const byKey = new Map( months.map( ( m ) => [ m.key, m ] ) );
-
-		saleItems
-			.filter( ( it ) => 'pagado' === it.sales?.status && it.sales?.created_at )
-			.forEach( ( it ) => {
-				const bucket = byKey.get( monthKey( new Date( it.sales.created_at ) ) );
-				if ( ! bucket ) return; // fuera de los últimos 12 meses
-				bucket.sold += it.unit_price * it.quantity;
-				bucket.profit += ( it.unit_price - it.unit_cost ) * it.quantity;
-			} );
-
-		expenses.forEach( ( e ) => {
-			// expense_date es "date" pura (YYYY-MM-DD) — se arma la clave del
-			// mes directo del string, sin pasar por Date() (mismo motivo que
-			// en monthExpenses: evitar el corrimiento de zona horaria).
-			const bucket = byKey.get( e.expense_date.slice( 0, 7 ) );
-			if ( ! bucket ) return;
-			bucket.expenses += Number( e.amount );
-		} );
-
-		monthlyTrend = months.map( ( m ) => ( { ...m, netProfit: m.profit - m.expenses } ) );
 	}
 
 	// Calcula el ranking dos veces: todo el historial (mismo criterio que
@@ -387,7 +334,6 @@ export function renderDashboard( main, ctx ) {
 
 			${ recommendationsHtml() }
 			${ topProductsHtml() }
-			${ monthlyTrendHtml() }
 			${ chartHtml() }
 		`;
 
@@ -405,12 +351,6 @@ export function renderDashboard( main, ctx ) {
 			} );
 		} );
 
-		main.querySelectorAll( '.mt-range-btn' ).forEach( ( btn ) => {
-			btn.addEventListener( 'click', () => {
-				monthlyTrendMonths = Number( btn.dataset.months );
-				draw();
-			} );
-		} );
 	}
 
 	function statCard( label, value, hint, goto, params, color ) {
@@ -496,63 +436,6 @@ export function renderDashboard( main, ctx ) {
 		`;
 	}
 
-	function monthlyTrendHtml() {
-		const shown = monthlyTrend.slice( -monthlyTrendMonths );
-		const maxAbs = Math.max( 1, ...shown.map( ( m ) => Math.abs( m.netProfit ) ) );
-
-		return `
-			<div class="acp-viz-root" style="margin-bottom:24px">
-				<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px">
-					<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
-						<div>
-							<div style="font-size:15px;font-weight:700">Comparativo mensual</div>
-							<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Ganancia neta (ventas Pagado − gastos) por mes</div>
-						</div>
-						<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
-							${ [ 3, 6, 12 ]
-								.map(
-									( n ) => `
-								<button type="button" class="mt-range-btn" data-months="${ n }" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ n === monthlyTrendMonths ? 'var(--accent)' : 'transparent' };color:${ n === monthlyTrendMonths ? 'var(--accent-contrast)' : 'var(--text-muted)' }">${ n } meses</button>
-							`
-								)
-								.join( '' ) }
-						</div>
-					</div>
-					<div style="display:flex;align-items:stretch;gap:${ shown.length > 6 ? '4px' : '10px' };height:200px">
-						${ shown.map( ( m ) => monthBarHtml( m, maxAbs ) ).join( '' ) }
-					</div>
-				</div>
-			</div>
-		`;
-	}
-
-	function monthBarHtml( m, maxAbs ) {
-		const isPositive = m.netProfit >= 0;
-		const heightPct = 0 === maxAbs ? 0 : Math.min( 100, Math.round( ( Math.abs( m.netProfit ) / maxAbs ) * 100 ) );
-		const color = isPositive ? 'oklch(0.72 0.16 152)' : 'oklch(0.65 0.18 25)';
-		const tooltip = `${ m.label }: ventas ${ money( m.sold ) }, ganancia neta ${ money( m.netProfit ) }`;
-
-		return `
-			<div style="flex:1;min-width:0;display:flex;flex-direction:column">
-				<div style="height:50%;display:flex;align-items:flex-end;justify-content:center">
-					${
-						isPositive
-							? `<div class="acp-chart-segment" data-tooltip="${ escAttr( tooltip ) }" style="width:70%;max-width:28px;height:${ heightPct }%;background:${ color };border-radius:4px 4px 0 0"></div>`
-							: ''
-					}
-				</div>
-				<div style="height:50%;display:flex;align-items:flex-start;justify-content:center;border-top:1px solid var(--border)">
-					${
-						isPositive
-							? ''
-							: `<div class="acp-chart-segment" data-tooltip="${ escAttr( tooltip ) }" style="width:70%;max-width:28px;height:${ heightPct }%;background:${ color };border-radius:0 0 4px 4px"></div>`
-					}
-				</div>
-				<div style="font-size:10px;color:var(--text-faint2, var(--text-muted));margin-top:8px;text-align:center;white-space:nowrap">${ esc( m.label ) }</div>
-			</div>
-		`;
-	}
-
 	function chartHtml() {
 		const maxTotal = Math.max( 1, ...chartDays.map( ( d ) => d.total ) );
 
@@ -621,10 +504,6 @@ function ymd( date ) {
 	const m = String( date.getMonth() + 1 ).padStart( 2, '0' );
 	const d = String( date.getDate() ).padStart( 2, '0' );
 	return `${ y }-${ m }-${ d }`;
-}
-
-function monthKey( date ) {
-	return date.getFullYear() + '-' + String( date.getMonth() + 1 ).padStart( 2, '0' );
 }
 
 function date_i18n( date ) {

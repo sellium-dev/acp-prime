@@ -6,9 +6,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
 import { renderProductos } from './screens/productos.js?v=13';
 import { renderVentas } from './screens/ventas.js?v=12';
-import { renderDashboard } from './screens/dashboard.js?v=14';
+import { renderDashboard } from './screens/dashboard.js?v=15';
 import { renderConfiguracion } from './screens/configuracion.js?v=4';
 import { renderGastos } from './screens/gastos.js?v=4';
+import { renderAnalitica } from './screens/analitica.js?v=1';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');
@@ -35,6 +36,7 @@ function navItemsFor( perms ) {
 	const items = [];
 	if ( perms.canSeeDashboard ) {
 		items.push( { id: 'dashboard', label: 'Dashboard' } );
+		items.push( { id: 'analitica', label: 'Analítica' } );
 	}
 	items.push( { id: 'ventas', label: 'Ventas' } );
 	if ( perms.canSeeProductos ) {
@@ -348,6 +350,11 @@ function renderMain() {
 
 	if ( 'dashboard' === state.activeNav && ctx.canSeeDashboard ) {
 		renderDashboard( main, ctx );
+		return;
+	}
+
+	if ( 'analitica' === state.activeNav && ctx.canSeeDashboard ) {
+		renderAnalitica( main, ctx );
 		return;
 	}
 
