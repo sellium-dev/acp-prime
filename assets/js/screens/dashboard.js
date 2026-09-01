@@ -348,15 +348,21 @@ export function renderDashboard( main, ctx ) {
 					money( stats.receivable ),
 					'Pre-venta y crédito pendientes de pago — click para ver cuáles',
 					'ventas',
-					{ range: 'todos' },
+					{ range: 'todos', status: [ 'pre_venta', 'credito' ] },
 					stats.receivable > 0 ? 'oklch(0.75 0.16 95)' : undefined
 				) }
 				${ statCard(
 					'Devuelto este mes',
 					money( stats.voidedThisMonth ),
-					'Ventas anuladas — click para ver el detalle',
+					'Ventas anuladas — click para ver el detalle (incluye anulaciones de ventas de meses anteriores)',
 					'ventas',
-					{ range: 'mes', status: 'anulado' },
+					// "todos", no "mes": el monto de la tarjeta se calcula por
+					// FECHA DE ANULACIÓN, pero el rango de Ventas filtra por fecha
+					// de VENTA — con "mes" quedaría una venta vieja anulada este
+					// mes fuera de la lista aunque sí cuenta en el monto. Se
+					// muestran todas las anuladas (con su fecha de anulación
+					// visible en cada una) en vez de un recorte que no calza.
+					{ range: 'todos', status: 'anulado' },
 					stats.voidedThisMonth > 0 ? 'oklch(0.65 0.18 25)' : undefined
 				) }
 			</div>

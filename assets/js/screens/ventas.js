@@ -17,7 +17,9 @@ export function renderVentas( main, ctx ) {
 	let sales = [];
 	let memberNames = new Map();
 	let range = [ 'mes', 'todos' ].includes( ctx.navParams?.range ) ? ctx.navParams.range : 'hoy';
-	let statusFilter = ctx.navParams?.status && SALE_STATUS[ ctx.navParams.status ] ? ctx.navParams.status : null;
+	// Acepta un estado solo ("anulado") o varios ("Por cobrar" = pre_venta +
+	// credito) — siempre se normaliza a un array (o null si no aplica).
+	let statusFilter = normalizeStatusFilter( ctx.navParams?.status );
 
 	load();
 
@@ -71,7 +73,7 @@ export function renderVentas( main, ctx ) {
 	function draw() {
 		const filtered = filterVariants();
 		const cartTotal = cart.reduce( ( sum, item ) => sum + item.price * item.qty, 0 );
-		const filteredSales = statusFilter ? sales.filter( ( s ) => s.status === statusFilter ) : sales;
+		const filteredSales = statusFilter ? sales.filter( ( s ) => statusFilter.includes( s.status ) ) : sales;
 
 		main.innerHTML = `
 			<div style="margin-bottom:24px">
@@ -139,7 +141,7 @@ export function renderVentas( main, ctx ) {
 				statusFilter
 					? `
 				<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:var(--text-muted)">
-					Mostrando solo: <span style="font-weight:700;color:${ SALE_STATUS[ statusFilter ].color }">${ SALE_STATUS[ statusFilter ].label }</span>
+					Mostrando solo: <span style="font-weight:700">${ statusFilter.map( ( s ) => `<span style="color:${ SALE_STATUS[ s ].color }">${ SALE_STATUS[ s ].label }</span>` ).join( ', ' ) }</span>
 					<button type="button" id="v-clear-status-filter" style="background:none;border:none;color:var(--text-muted);cursor:pointer;text-decoration:underline;font-size:12px">Quitar filtro</button>
 				</div>
 			`
@@ -437,6 +439,11 @@ export function renderVentas( main, ctx ) {
 
 function money( n ) {
 	return '$' + Number( n ).toLocaleString( 'es-CL', { maximumFractionDigits: 0 } );
+}
+
+function normalizeStatusFilter( value ) {
+	const list = ( Array.isArray( value ) ? value : [ value ] ).filter( ( s ) => SALE_STATUS[ s ] );
+	return 0 === list.length ? null : list;
 }
 
 function formatSaleDateTime( isoString ) {
