@@ -8,6 +8,7 @@ export function renderAnalitica( main, ctx ) {
 	const { supabase, org } = ctx;
 	let monthlyTrend = []; // hasta MONTHLY_TREND_MAX_MONTHS meses, viejo → nuevo
 	let monthlyTrendMonths = MONTHLY_TREND_DEFAULT_MONTHS;
+	let selectedMonthKey = null; // mes con el detalle por producto desplegado
 	let noSalesRecent = [];
 	let noSalesAllTime = [];
 	let noSalesRange = 'reciente'; // 'reciente' | 'historico'
@@ -76,18 +77,44 @@ export function renderAnalitica( main, ctx ) {
 		for ( let i = MONTHLY_TREND_MAX_MONTHS - 1; i >= 0; i-- ) {
 			const d = new Date( currentMonthStart );
 			d.setMonth( d.getMonth() - i );
-			months.push( { key: monthKey( d ), label: d.toLocaleDateString( 'es-CL', MONTH_LABEL_FORMAT ), sold: 0, profit: 0, expenses: 0 } );
+			months.push( {
+				key: monthKey( d ),
+				label: d.toLocaleDateString( 'es-CL', MONTH_LABEL_FORMAT ),
+				sold: 0,
+				units: 0,
+				profit: 0,
+				expenses: 0,
+				receivable: 0,
+				productsByKey: new Map(), // product_id -> { name, units, revenue }
+			} );
 		}
 		const byKey = new Map( months.map( ( m ) => [ m.key, m ] ) );
 
-		items
-			.filter( ( it ) => 'pagado' === it.sales?.status && it.sales?.created_at )
-			.forEach( ( it ) => {
-				const bucket = byKey.get( monthKey( new Date( it.sales.created_at ) ) );
-				if ( ! bucket ) return; // fuera de los últimos 12 meses
+		items.forEach( ( it ) => {
+			if ( ! it.sales?.created_at ) return;
+			const bucket = byKey.get( monthKey( new Date( it.sales.created_at ) ) );
+			if ( ! bucket ) return; // fuera de los últimos 12 meses
+
+			if ( 'pagado' === it.sales.status ) {
 				bucket.sold += it.unit_price * it.quantity;
+				bucket.units += it.quantity;
 				bucket.profit += ( it.unit_price - it.unit_cost ) * it.quantity;
-			} );
+
+				const productId = it.product_variants?.product_id;
+				const name = it.product_variants?.products?.name;
+				if ( productId && name ) {
+					const p = bucket.productsByKey.get( productId ) || { name, units: 0, revenue: 0 };
+					p.units += it.quantity;
+					p.revenue += it.unit_price * it.quantity;
+					bucket.productsByKey.set( productId, p );
+				}
+			} else if ( 'pre_venta' === it.sales.status || 'credito' === it.sales.status ) {
+				// Lo que quedó pendiente de cobro de lo que se vendió ESE mes en
+				// particular (no necesariamente lo que sigue pendiente hoy — si
+				// ya se marcó Pagado, deja de contar acá y pasa a "sold").
+				bucket.receivable += it.unit_price * it.quantity;
+			}
+		} );
 
 		expenses.forEach( ( e ) => {
 			// expense_date es "date" pura (YYYY-MM-DD) — se arma la clave del
@@ -98,7 +125,11 @@ export function renderAnalitica( main, ctx ) {
 			bucket.expenses += Number( e.amount );
 		} );
 
-		monthlyTrend = months.map( ( m ) => ( { ...m, netProfit: m.profit - m.expenses } ) );
+		monthlyTrend = months.map( ( m ) => ( {
+			...m,
+			netProfit: m.profit - m.expenses,
+			products: Array.from( m.productsByKey.values() ).sort( ( a, b ) => b.revenue - a.revenue ),
+		} ) );
 	}
 
 	// Productos con stock que NO tuvieron ninguna venta Pagado en el rango —
@@ -178,6 +209,14 @@ export function renderAnalitica( main, ctx ) {
 		main.querySelectorAll( '.mt-range-btn' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => {
 				monthlyTrendMonths = Number( btn.dataset.months );
+				selectedMonthKey = null;
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '.mt-month-col' ).forEach( ( col ) => {
+			col.addEventListener( 'click', () => {
+				const key = col.dataset.monthKey;
+				selectedMonthKey = selectedMonthKey === key ? null : key;
 				draw();
 			} );
 		} );
@@ -192,6 +231,7 @@ export function renderAnalitica( main, ctx ) {
 	function monthlyTrendHtml() {
 		const shown = monthlyTrend.slice( -monthlyTrendMonths );
 		const maxAbs = Math.max( 1, ...shown.map( ( m ) => Math.abs( m.netProfit ) ) );
+		const selected = monthlyTrend.find( ( m ) => m.key === selectedMonthKey );
 
 		return `
 			<div class="acp-viz-root" style="margin-bottom:24px">
@@ -199,7 +239,7 @@ export function renderAnalitica( main, ctx ) {
 					<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
 						<div>
 							<div style="font-size:15px;font-weight:700">Comparativo mensual</div>
-							<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Ganancia neta (ventas Pagado − gastos) por mes</div>
+							<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Ganancia neta (ventas Pagado − gastos) por mes — click en un mes para ver el detalle</div>
 						</div>
 						<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
 							${ [ 3, 6, 12 ]
@@ -214,6 +254,7 @@ export function renderAnalitica( main, ctx ) {
 					<div style="display:flex;align-items:stretch;gap:${ shown.length > 6 ? '4px' : '10px' };height:200px">
 						${ shown.map( ( m ) => monthBarHtml( m, maxAbs ) ).join( '' ) }
 					</div>
+					${ selected ? monthDetailHtml( selected ) : '' }
 				</div>
 			</div>
 		`;
@@ -223,10 +264,11 @@ export function renderAnalitica( main, ctx ) {
 		const isPositive = m.netProfit >= 0;
 		const heightPct = 0 === maxAbs ? 0 : Math.min( 100, Math.round( ( Math.abs( m.netProfit ) / maxAbs ) * 100 ) );
 		const color = isPositive ? 'oklch(0.72 0.16 152)' : 'oklch(0.65 0.18 25)';
-		const tooltip = `${ m.label }: ventas ${ money( m.sold ) }, ganancia neta ${ money( m.netProfit ) }`;
+		const tooltip = `${ m.label }: ${ money( m.sold ) } (${ m.units } uds), ganancia neta ${ money( m.netProfit ) }` + ( m.receivable > 0 ? `, por cobrar ${ money( m.receivable ) }` : '' );
+		const isSelected = m.key === selectedMonthKey;
 
 		return `
-			<div style="flex:1;min-width:0;display:flex;flex-direction:column">
+			<div class="mt-month-col" data-month-key="${ m.key }" style="flex:1;min-width:0;display:flex;flex-direction:column;cursor:pointer;border-radius:8px;background:${ isSelected ? 'var(--input-bg)' : 'transparent' }">
 				<div style="height:50%;display:flex;align-items:flex-end;justify-content:center">
 					${
 						isPositive
@@ -241,7 +283,50 @@ export function renderAnalitica( main, ctx ) {
 							: `<div class="acp-chart-segment" data-tooltip="${ escAttr( tooltip ) }" style="width:70%;max-width:28px;height:${ heightPct }%;background:${ color };border-radius:0 0 4px 4px"></div>`
 					}
 				</div>
-				<div style="font-size:10px;color:var(--text-faint2, var(--text-muted));margin-top:8px;text-align:center;white-space:nowrap">${ esc( m.label ) }</div>
+				<div style="font-size:10px;color:${ isSelected ? 'var(--text)' : 'var(--text-faint2, var(--text-muted))' };font-weight:${ isSelected ? '700' : '400' };margin-top:8px;text-align:center;white-space:nowrap">${ esc( m.label ) }</div>
+			</div>
+		`;
+	}
+
+	function monthDetailHtml( m ) {
+		return `
+			<div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border)">
+				<div style="font-size:14px;font-weight:700;margin-bottom:12px">Detalle de ${ esc( m.label ) }</div>
+				<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px">
+					<div>
+						<div style="font-size:11px;color:var(--text-muted)">Vendido (Pagado)</div>
+						<div style="font-size:16px;font-weight:800">${ money( m.sold ) }</div>
+						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">${ m.units } unidades</div>
+					</div>
+					<div>
+						<div style="font-size:11px;color:var(--text-muted)">Ganancia neta</div>
+						<div style="font-size:16px;font-weight:800;color:${ m.netProfit >= 0 ? 'oklch(0.72 0.16 152)' : 'oklch(0.65 0.18 25)' }">${ money( m.netProfit ) }</div>
+					</div>
+					<div>
+						<div style="font-size:11px;color:var(--text-muted)">Gastos</div>
+						<div style="font-size:16px;font-weight:800">${ money( m.expenses ) }</div>
+					</div>
+					<div>
+						<div style="font-size:11px;color:var(--text-muted)">Por cobrar generado ese mes</div>
+						<div style="font-size:16px;font-weight:800;color:${ m.receivable > 0 ? 'oklch(0.75 0.16 95)' : 'inherit' }">${ money( m.receivable ) }</div>
+					</div>
+				</div>
+				<div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px">Productos vendidos ese mes</div>
+				${
+					0 === m.products.length
+						? '<div style="font-size:13px;color:var(--text-muted)">No hubo ventas Pagado este mes.</div>'
+						: m.products
+								.map(
+									( p ) => `
+					<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+						<div style="flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( p.name ) }</div>
+						<div style="font-size:12px;color:var(--text-faint2, var(--text-muted))">${ p.units } uds</div>
+						<div style="font-size:13px;font-weight:700">${ money( p.revenue ) }</div>
+					</div>
+				`
+								)
+								.join( '' )
+				}
 			</div>
 		`;
 	}
