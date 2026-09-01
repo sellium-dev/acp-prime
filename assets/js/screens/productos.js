@@ -1,6 +1,49 @@
 const CATEGORIES = [ 'Poleras/Camisetas', 'Shorts', 'Pantalones/Joggers', 'Zapatillas', 'Accesorios' ];
 const DEFAULT_MARGIN_PERCENT = 30;
 
+// Tallas de letra conocidas y su orden esperado — "XXL" y "2XL" (etc.) son
+// la misma talla escrita distinto, así que comparten rango. Todo lo que no
+// calce acá (números de calzado, o "modelo" de un negocio que no es de
+// ropa) se ordena aparte: numérico primero, texto libre al final.
+const SIZE_RANK = {
+	XXS: 0,
+	XS: 1,
+	S: 2,
+	M: 3,
+	L: 4,
+	XL: 5,
+	XXL: 6,
+	'2XL': 6,
+	XXXL: 7,
+	'3XL': 7,
+	XXXXL: 8,
+	'4XL': 8,
+};
+
+function sizeSortKey( size ) {
+	const normalized = ( size || '' ).trim().toUpperCase();
+	if ( normalized in SIZE_RANK ) {
+		return [ 0, SIZE_RANK[ normalized ], normalized ];
+	}
+	const asNumber = Number( normalized );
+	if ( '' !== normalized && ! Number.isNaN( asNumber ) ) {
+		return [ 1, asNumber, normalized ];
+	}
+	return [ 2, 0, normalized ];
+}
+
+function compareBySize( a, b ) {
+	const ka = sizeSortKey( a.size );
+	const kb = sizeSortKey( b.size );
+	if ( ka[ 0 ] !== kb[ 0 ] ) return ka[ 0 ] - kb[ 0 ];
+	if ( ka[ 1 ] !== kb[ 1 ] ) return ka[ 1 ] - kb[ 1 ];
+	return ka[ 2 ].localeCompare( kb[ 2 ] );
+}
+
+function sortVariantsBySize( variants ) {
+	return [ ...variants ].sort( compareBySize );
+}
+
 export function renderProductos( main, ctx ) {
 	const { supabase, org, canCreateProducts, canEditProducts } = ctx;
 	// costo + este % = precio sugerido, configurable por empresa en Configuración
@@ -9,6 +52,7 @@ export function renderProductos( main, ctx ) {
 	let view = 'list';
 	let products = [];
 	let search = '';
+	let sizeFilter = '';
 	let editingProduct = null; // null = nuevo, objeto = editando
 	let formName = '';
 	let formCategory = '';
@@ -56,8 +100,12 @@ export function renderProductos( main, ctx ) {
 				<div style="font-size:24px;font-weight:800;letter-spacing:-0.01em">Productos</div>
 				${ canCreateProducts ? '<button type="button" class="acp-btn-primary" style="width:auto;padding:10px 18px" id="acp-new-product">+ Nuevo producto</button>' : '' }
 			</div>
-			<input id="p-search" placeholder="Buscar por nombre…" value="${ escAttr( search ) }"
-				style="width:100%;max-width:360px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;font-family:inherit;outline:none;margin-bottom:20px" />
+			<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+				<input id="p-search" placeholder="Buscar por nombre…" value="${ escAttr( search ) }"
+					style="flex:1;min-width:200px;max-width:360px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;font-family:inherit;outline:none" />
+				<input id="p-size-filter" placeholder="Talla…" value="${ escAttr( sizeFilter ) }"
+					style="width:120px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;font-family:inherit;outline:none" />
+			</div>
 			${ 0 === filtered.length ? `<div class="acp-empty-state">${ 0 === products.length ? 'Todavía no hay productos cargados.' : 'Sin resultados para esa búsqueda.' }</div>` : '' }
 			<div style="display:flex;flex-direction:column;gap:12px">
 				${ filtered.map( productCardHtml ).join( '' ) }
@@ -90,17 +138,45 @@ export function renderProductos( main, ctx ) {
 			restored.focus();
 			restored.setSelectionRange( caret, caret );
 		} );
+
+		const sizeInput = document.getElementById( 'p-size-filter' );
+		sizeInput.addEventListener( 'input', () => {
+			sizeFilter = sizeInput.value;
+			const caret = sizeInput.selectionStart;
+			draw();
+			const restored = document.getElementById( 'p-size-filter' );
+			restored.focus();
+			restored.setSelectionRange( caret, caret );
+		} );
 	}
 
 	function filterProducts() {
-		if ( '' === search.trim() ) return products;
-		const q = search.trim().toLowerCase();
-		return products.filter( ( p ) => p.name.toLowerCase().includes( q ) );
+		let list = products;
+
+		if ( '' !== search.trim() ) {
+			const q = search.trim().toLowerCase();
+			list = list.filter( ( p ) => p.name.toLowerCase().includes( q ) );
+		}
+
+		if ( '' !== sizeFilter.trim() ) {
+			const s = sizeFilter.trim().toLowerCase();
+			list = list.filter( ( p ) => ( p.product_variants || [] ).some( ( v ) => v.size.toLowerCase() === s && v.stock_quantity > 0 ) );
+		}
+
+		return list;
 	}
 
 	function productCardHtml( product ) {
-		const variants = product.product_variants || [];
-		const totalStock = variants.reduce( ( sum, v ) => sum + v.stock_quantity, 0 );
+		const s = sizeFilter.trim().toLowerCase();
+		// Con el filtro de talla activo, solo se muestran las variantes que
+		// calzan (y tienen stock) — filterProducts() ya se aseguró de que el
+		// producto tenga al menos una, así que acá nunca queda la lista vacía.
+		const variants = sortVariantsBySize(
+			'' === s
+				? product.product_variants || []
+				: ( product.product_variants || [] ).filter( ( v ) => v.size.toLowerCase() === s && v.stock_quantity > 0 )
+		);
+		const totalStock = ( product.product_variants || [] ).reduce( ( sum, v ) => sum + v.stock_quantity, 0 );
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px">
 				<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:8px">
@@ -142,7 +218,7 @@ export function renderProductos( main, ctx ) {
 		formDescription = product?.description || '';
 		formLowStock = product?.low_stock_threshold ?? 1;
 		formVariants = product
-			? product.product_variants.map( ( v ) => ( { ...v } ) )
+			? sortVariantsBySize( product.product_variants ).map( ( v ) => ( { ...v } ) )
 			: [ emptyVariant() ];
 		errorMsg = '';
 		view = 'form';
@@ -184,7 +260,7 @@ export function renderProductos( main, ctx ) {
 			} );
 		}
 
-		restockRows = ( product.product_variants || [] ).map( ( v ) => ( {
+		restockRows = sortVariantsBySize( product.product_variants || [] ).map( ( v ) => ( {
 			id: v.id,
 			size: v.size,
 			color: v.color,
