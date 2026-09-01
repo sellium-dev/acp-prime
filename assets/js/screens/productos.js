@@ -164,8 +164,26 @@ export function renderProductos( main, ctx ) {
 		return { id: null, size: '', color: '', price: '', cost: '', stock_quantity: '' };
 	}
 
-	function openRestock( product ) {
+	async function openRestock( product ) {
 		restockProduct = product;
+		const variantIds = ( product.product_variants || [] ).map( ( v ) => v.id );
+
+		// El lote más reciente de cada variante — para poder ofrecer "es el
+		// mismo lote que la última reposición" en vez de crear uno nuevo.
+		const latestLotByVariant = new Map();
+		if ( variantIds.length > 0 ) {
+			const { data: lots } = await supabase
+				.from( 'stock_lots' )
+				.select( 'id, product_variant_id, quantity, remaining_quantity, unit_cost, created_at' )
+				.in( 'product_variant_id', variantIds )
+				.order( 'created_at', { ascending: false } );
+			( lots || [] ).forEach( ( lot ) => {
+				if ( ! latestLotByVariant.has( lot.product_variant_id ) ) {
+					latestLotByVariant.set( lot.product_variant_id, lot );
+				}
+			} );
+		}
+
 		restockRows = ( product.product_variants || [] ).map( ( v ) => ( {
 			id: v.id,
 			size: v.size,
@@ -173,6 +191,7 @@ export function renderProductos( main, ctx ) {
 			stock_quantity: v.stock_quantity,
 			cost: v.cost,
 			price: v.price,
+			latestLot: latestLotByVariant.get( v.id ) || null,
 		} ) );
 		errorMsg = '';
 		view = 'restock';
@@ -206,6 +225,16 @@ export function renderProductos( main, ctx ) {
 								<input placeholder="Costo" class="r-cost" type="number" step="0.01" value="${ escAttr( r.cost ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 								<input placeholder="Precio" class="r-price" type="number" step="0.01" value="${ escAttr( r.price ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 							</div>
+							${
+								r.latestLot
+									? `
+								<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);cursor:pointer;margin-top:8px">
+									<input type="checkbox" class="r-same-lot" style="margin:0" />
+									Es el mismo lote que la última reposición (${ formatLotDate( r.latestLot.created_at ) }, costo ${ money( r.latestLot.unit_cost ) })
+								</label>
+							`
+									: '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Este será su primer lote registrado.</div>'
+							}
 							<div class="r-hint" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
 						</div>
 					`
@@ -306,11 +335,15 @@ export function renderProductos( main, ctx ) {
 			const baseCost = parseFloat( row.querySelector( '.r-cost' ).value ) || 0;
 			const cost = Math.round( ( baseCost + perUnit ) * 100 ) / 100;
 			const price = parseFloat( row.querySelector( '.r-price' ).value ) || 0;
+			const sameLotCheckbox = row.querySelector( '.r-same-lot' );
 			updates.push( {
-				id: restockRows[ i ].id,
+				variantId: restockRows[ i ].id,
 				stock_quantity: restockRows[ i ].stock_quantity + addQty,
 				cost,
 				price,
+				addQty,
+				latestLot: restockRows[ i ].latestLot,
+				sameLot: !! ( sameLotCheckbox && sameLotCheckbox.checked ),
 			} );
 		} );
 
@@ -328,8 +361,36 @@ export function renderProductos( main, ctx ) {
 				const { error } = await supabase
 					.from( 'product_variants' )
 					.update( { stock_quantity: u.stock_quantity, cost: u.cost, price: u.price } )
-					.eq( 'id', u.id );
+					.eq( 'id', u.variantId );
 				if ( error ) throw error;
+
+				if ( u.sameLot && u.latestLot ) {
+					// Se funde con el lote más reciente: el costo queda como
+					// promedio ponderado entre lo que quedaba de ese lote y lo
+					// que entra ahora — no se toca created_at (sigue siendo el
+					// más antiguo para efectos de FIFO).
+					const lot = u.latestLot;
+					const newRemaining = lot.remaining_quantity + u.addQty;
+					const newQuantity = lot.quantity + u.addQty;
+					const newUnitCost =
+						newRemaining > 0
+							? Math.round( ( ( lot.remaining_quantity * lot.unit_cost + u.addQty * u.cost ) / newRemaining ) * 100 ) / 100
+							: u.cost;
+					const { error: lotError } = await supabase
+						.from( 'stock_lots' )
+						.update( { quantity: newQuantity, remaining_quantity: newRemaining, unit_cost: newUnitCost } )
+						.eq( 'id', lot.id );
+					if ( lotError ) throw lotError;
+				} else {
+					const { error: lotError } = await supabase.from( 'stock_lots' ).insert( {
+						organization_id: org.id,
+						product_variant_id: u.variantId,
+						quantity: u.addQty,
+						remaining_quantity: u.addQty,
+						unit_cost: u.cost,
+					} );
+					if ( lotError ) throw lotError;
+				}
 			}
 			saving = false;
 			view = 'list';
@@ -675,8 +736,25 @@ export function renderProductos( main, ctx ) {
 					stock_quantity: v.stock_quantity,
 				} ) );
 			if ( toInsert.length > 0 ) {
-				const { error } = await supabase.from( 'product_variants' ).insert( toInsert );
+				const { data: insertedVariants, error } = await supabase.from( 'product_variants' ).insert( toInsert ).select( 'id, cost, stock_quantity' );
 				if ( error ) throw error;
+
+				// El stock inicial de una variante nueva es, por definición, su
+				// primer lote — no hace falta preguntar nada, a diferencia de
+				// "Reponer stock" donde sí puede ser una compra distinta.
+				const newLots = ( insertedVariants || [] )
+					.filter( ( v ) => v.stock_quantity > 0 )
+					.map( ( v ) => ( {
+						organization_id: org.id,
+						product_variant_id: v.id,
+						quantity: v.stock_quantity,
+						remaining_quantity: v.stock_quantity,
+						unit_cost: v.cost,
+					} ) );
+				if ( newLots.length > 0 ) {
+					const { error: lotError } = await supabase.from( 'stock_lots' ).insert( newLots );
+					if ( lotError ) throw lotError;
+				}
 			}
 
 			saving = false;
@@ -696,6 +774,10 @@ function loadingHtml() {
 
 function money( n ) {
 	return '$' + Number( n ).toLocaleString( 'es-CL', { maximumFractionDigits: 0 } );
+}
+
+function formatLotDate( isoString ) {
+	return new Date( isoString ).toLocaleDateString( 'es-CL', { day: '2-digit', month: '2-digit' } );
 }
 
 function esc( str ) {

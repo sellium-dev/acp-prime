@@ -114,6 +114,19 @@ que ya existe.
   pasa una venta de Pagado de vuelta a Pre-venta (ej. si se marcó pagada
   por error) — no toca el stock. Botón "Marcar como pre-venta" en Ventas,
   visible solo en ventas Pagado, con confirmación antes de aplicarlo.
+- **`013_lotes_de_stock.sql`**: tabla `stock_lots` — cada compra o
+  reposición queda como un lote con su propia fecha y costo. `register_sale()`
+  ahora consume stock FIFO (del lote más antiguo al más nuevo, por
+  variante) y puede repartir una sola línea del carrito en varias filas
+  de `sale_items` si cruza más de un lote con costos distintos —
+  `sale_items.stock_lot_id` (nueva columna) guarda de cuál salió cada una.
+  `void_sale()` devuelve cada línea a su lote exacto. Todo el stock que
+  ya existía se agrupa en un "Lote 1" fechado a cuando se corre esta
+  migración (no hay forma de saber la fecha de compra real de lo viejo).
+  "Reponer stock" (Productos) deja elegir si la reposición es un lote
+  nuevo o el mismo que la última vez (con un promedio ponderado del
+  costo). Analítica muestra cada lote con una barra de % recuperado
+  (ventas Pagado de ese lote específico, contra lo que costó comprarlo).
 
 ## Variables de entorno del frontend
 

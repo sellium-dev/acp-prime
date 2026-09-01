@@ -17,6 +17,8 @@ export function renderAnalitica( main, ctx ) {
 	let totalProducts = 0;
 	let voidedByProduct = [];
 	let voidedSummary = { count: 0, units: 0, total: 0 };
+	let lots = [];
+	let lotsRange = 'abiertos'; // 'abiertos' | 'todos'
 	let errorMsg = '';
 
 	load();
@@ -30,25 +32,31 @@ export function renderAnalitica( main, ctx ) {
 		const trendStart = new Date( startOfMonth );
 		trendStart.setMonth( trendStart.getMonth() - ( MONTHLY_TREND_MAX_MONTHS - 1 ) );
 
-		const [ variantsRes, itemsRes, expensesRes ] = await Promise.all( [
+		const [ variantsRes, itemsRes, expensesRes, lotsRes ] = await Promise.all( [
 			supabase.from( 'product_variants' ).select( 'product_id, stock_quantity, products ( name )' ).eq( 'organization_id', org.id ),
 			// Todo el historial de sale_items, cualquier estado — de acá salen
-			// las 3 secciones: comparativo mensual (solo pagado), qué no se
-			// vendió (set de product_id con al menos una venta pagado) e
-			// intentos de venta anulados (solo anulado).
+			// las secciones: comparativo mensual (solo pagado), qué no se
+			// vendió (set de product_id con al menos una venta pagado), intentos
+			// de venta anulados (solo anulado), y cuánto se recuperó de cada
+			// lote de stock (stock_lot_id, solo pagado).
 			supabase
 				.from( 'sale_items' )
-				.select( 'quantity, unit_price, unit_cost, product_variants ( product_id, products ( name ) ), sales ( created_at, status )' )
+				.select( 'quantity, unit_price, unit_cost, stock_lot_id, product_variants ( product_id, products ( name ) ), sales ( created_at, status )' )
 				.eq( 'organization_id', org.id ),
 			supabase
 				.from( 'expenses' )
 				.select( 'amount, expense_date' )
 				.eq( 'organization_id', org.id )
 				.gte( 'expense_date', ymd( trendStart ) ),
+			supabase
+				.from( 'stock_lots' )
+				.select( 'id, quantity, remaining_quantity, unit_cost, created_at, product_variants ( size, color, products ( name ) )' )
+				.eq( 'organization_id', org.id )
+				.order( 'created_at', { ascending: false } ),
 		] );
 
-		if ( variantsRes.error || itemsRes.error || expensesRes.error ) {
-			errorMsg = 'No se pudo cargar la analítica: ' + ( variantsRes.error || itemsRes.error || expensesRes.error ).message;
+		if ( variantsRes.error || itemsRes.error || expensesRes.error || lotsRes.error ) {
+			errorMsg = 'No se pudo cargar la analítica: ' + ( variantsRes.error || itemsRes.error || expensesRes.error || lotsRes.error ).message;
 			draw();
 			return;
 		}
@@ -65,8 +73,40 @@ export function renderAnalitica( main, ctx ) {
 		buildMonthlyTrend( items, expensesRes.data || [], startOfMonth );
 		buildNoSales( items, byProduct );
 		buildVoidedByProduct( items );
+		buildLots( lotsRes.data || [], items );
 
 		draw();
+	}
+
+	// Cuánto se ha recuperado (en plata, solo Pagado) de cada lote de stock
+	// — la "barrita" que compara lo vendido de ESE lote puntual contra lo
+	// que costó comprarlo, sin importar si el producto ya tenía stock viejo
+	// antes (cada venta ya sabe de qué lote salió gracias al FIFO).
+	function buildLots( lotRows, items ) {
+		const recoveredByLot = new Map();
+		items
+			.filter( ( it ) => it.stock_lot_id && 'pagado' === it.sales?.status )
+			.forEach( ( it ) => {
+				recoveredByLot.set( it.stock_lot_id, ( recoveredByLot.get( it.stock_lot_id ) || 0 ) + it.unit_price * it.quantity );
+			} );
+
+		lots = lotRows.map( ( lot ) => {
+			const invested = lot.quantity * lot.unit_cost;
+			const recovered = recoveredByLot.get( lot.id ) || 0;
+			return {
+				id: lot.id,
+				name: lot.product_variants?.products?.name || 'Producto',
+				size: lot.product_variants?.size,
+				color: lot.product_variants?.color,
+				createdAt: lot.created_at,
+				quantity: lot.quantity,
+				remaining: lot.remaining_quantity,
+				unitCost: lot.unit_cost,
+				invested,
+				recovered,
+				recoveredPct: invested > 0 ? Math.min( 100, Math.round( ( recovered / invested ) * 100 ) ) : 0,
+			};
+		} );
 	}
 
 	// Ganancia neta (ventas Pagado menos gastos) por mes, últimos
@@ -198,6 +238,7 @@ export function renderAnalitica( main, ctx ) {
 			</div>
 			${ errorMsg ? `<div class="acp-error">${ esc( errorMsg ) }</div>` : '' }
 			${ monthlyTrendHtml() }
+			${ lotsHtml() }
 			${ noSalesHtml() }
 			${ voidedHtml() }
 		`;
@@ -223,6 +264,12 @@ export function renderAnalitica( main, ctx ) {
 		main.querySelectorAll( '.ns-range-btn' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => {
 				noSalesRange = btn.dataset.range;
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '.lots-range-btn' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				lotsRange = btn.dataset.range;
 				draw();
 			} );
 		} );
@@ -331,6 +378,51 @@ export function renderAnalitica( main, ctx ) {
 		`;
 	}
 
+	function lotsHtml() {
+		const list = 'abiertos' === lotsRange ? lots.filter( ( l ) => l.remaining > 0 ) : lots;
+
+		return `
+			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:24px">
+				<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:10px">
+					<div>
+						<div style="font-size:15px;font-weight:700">Lotes de stock</div>
+						<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Cada compra/reposición, y cuánto se ha recuperado en ventas Pagado desde entonces</div>
+					</div>
+					<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
+						<button type="button" class="lots-range-btn" data-range="abiertos" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'abiertos' === lotsRange ? 'var(--accent)' : 'transparent' };color:${ 'abiertos' === lotsRange ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Con stock</button>
+						<button type="button" class="lots-range-btn" data-range="todos" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'todos' === lotsRange ? 'var(--accent)' : 'transparent' };color:${ 'todos' === lotsRange ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Todos</button>
+					</div>
+				</div>
+				<div style="display:flex;flex-direction:column;gap:14px;margin-top:14px">
+					${
+						0 === list.length
+							? '<div style="font-size:13px;color:var(--text-muted)">No hay lotes en este filtro.</div>'
+							: list.map( lotRowHtml ).join( '' )
+					}
+				</div>
+			</div>
+		`;
+	}
+
+	function lotRowHtml( l ) {
+		const barColor = l.recoveredPct >= 100 ? 'oklch(0.72 0.16 152)' : 'oklch(0.72 0.13 230)';
+		return `
+			<div style="border:1px solid var(--border);border-radius:10px;padding:12px">
+				<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap">
+					<div style="font-size:13px;font-weight:600">${ esc( l.name ) }${ l.size ? ' · ' + esc( l.size ) : '' }${ l.color ? ' · ' + esc( l.color ) : '' }</div>
+					<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">${ formatLotDate( l.createdAt ) } · ${ l.quantity } uds a ${ money( l.unitCost ) } · quedan ${ l.remaining }</div>
+				</div>
+				<div style="background:var(--input-bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:6px">
+					<div style="width:${ l.recoveredPct }%;height:100%;background:${ barColor };border-radius:20px"></div>
+				</div>
+				<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted)">
+					<span>Recuperado ${ money( l.recovered ) } de ${ money( l.invested ) }</span>
+					<span style="font-weight:700;color:${ barColor }">${ l.recoveredPct }%</span>
+				</div>
+			</div>
+		`;
+	}
+
 	function noSalesHtml() {
 		const list = 'reciente' === noSalesRange ? noSalesRecent : noSalesAllTime;
 		const soldCount = 'reciente' === noSalesRange ? soldCountRecent : soldCountAllTime;
@@ -409,6 +501,10 @@ function ymd( date ) {
 
 function money( n ) {
 	return '$' + Number( n ).toLocaleString( 'es-CL', { maximumFractionDigits: 0 } );
+}
+
+function formatLotDate( isoString ) {
+	return new Date( isoString ).toLocaleDateString( 'es-CL', { day: '2-digit', month: '2-digit' } );
 }
 
 function esc( str ) {
