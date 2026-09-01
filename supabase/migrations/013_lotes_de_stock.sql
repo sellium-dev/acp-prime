@@ -38,10 +38,10 @@ alter table public.sale_items
   add column stock_lot_id uuid references public.stock_lots(id);
 
 -- Todo el stock actual se agrupa en un único lote base ("Lote 1"), fechado
--- a hoy — no tenemos forma de saber la fecha de compra real de lo que ya
--- estaba cargado antes de esta migración.
+-- al viernes 28 de octubre 19:00 hora Chile (fecha real de esa compra).
 insert into public.stock_lots ( organization_id, product_variant_id, quantity, remaining_quantity, unit_cost, created_at )
-select organization_id, id, stock_quantity, stock_quantity, cost, now()
+select organization_id, id, stock_quantity, stock_quantity, cost,
+  '2026-10-28 19:00:00'::timestamp at time zone 'America/Santiago'
 from public.product_variants
 where stock_quantity > 0;
 
