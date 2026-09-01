@@ -9,7 +9,7 @@ import { renderVentas } from './screens/ventas.js?v=12';
 import { renderDashboard } from './screens/dashboard.js?v=15';
 import { renderConfiguracion } from './screens/configuracion.js?v=4';
 import { renderGastos } from './screens/gastos.js?v=4';
-import { renderAnalitica } from './screens/analitica.js?v=3';
+import { renderAnalitica } from './screens/analitica.js?v=4';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const root = document.getElementById('acp-root');

@@ -84,15 +84,29 @@ export function renderAnalitica( main, ctx ) {
 	// antes (cada venta ya sabe de qué lote salió gracias al FIFO).
 	function buildLots( lotRows, items ) {
 		const recoveredByLot = new Map();
+		const pendingByLot = new Map();
 		items
-			.filter( ( it ) => it.stock_lot_id && 'pagado' === it.sales?.status )
+			.filter( ( it ) => it.stock_lot_id )
 			.forEach( ( it ) => {
-				recoveredByLot.set( it.stock_lot_id, ( recoveredByLot.get( it.stock_lot_id ) || 0 ) + it.unit_price * it.quantity );
+				const amount = it.unit_price * it.quantity;
+				if ( 'pagado' === it.sales?.status ) {
+					recoveredByLot.set( it.stock_lot_id, ( recoveredByLot.get( it.stock_lot_id ) || 0 ) + amount );
+				} else if ( 'pre_venta' === it.sales?.status || 'credito' === it.sales?.status ) {
+					pendingByLot.set( it.stock_lot_id, ( pendingByLot.get( it.stock_lot_id ) || 0 ) + amount );
+				}
 			} );
 
 		lots = lotRows.map( ( lot ) => {
 			const invested = lot.quantity * lot.unit_cost;
 			const recovered = recoveredByLot.get( lot.id ) || 0;
+			const pending = pendingByLot.get( lot.id ) || 0;
+			// El total combinado se capea en 100% del ancho de la barra, pero
+			// se reparte proporcional entre los dos segmentos — así "recuperado"
+			// nunca se ve más angosto de lo que realmente es solo porque
+			// "por cobrar" empuja el total sobre el 100%.
+			const combinedPct = invested > 0 ? Math.min( 100, ( ( recovered + pending ) / invested ) * 100 ) : 0;
+			const recoveredPct =
+				recovered + pending > 0 ? Math.round( ( combinedPct * recovered ) / ( recovered + pending ) ) : 0;
 			return {
 				id: lot.id,
 				name: lot.product_variants?.products?.name || 'Producto',
@@ -104,7 +118,10 @@ export function renderAnalitica( main, ctx ) {
 				unitCost: lot.unit_cost,
 				invested,
 				recovered,
-				recoveredPct: invested > 0 ? Math.min( 100, Math.round( ( recovered / invested ) * 100 ) ) : 0,
+				pending,
+				recoveredPct,
+				pendingPct: Math.round( combinedPct ) - recoveredPct,
+				recoveredPctLabel: invested > 0 ? Math.min( 100, Math.round( ( recovered / invested ) * 100 ) ) : 0,
 			};
 		} );
 	}
@@ -380,20 +397,49 @@ export function renderAnalitica( main, ctx ) {
 
 	function lotsHtml() {
 		const list = 'abiertos' === lotsRange ? lots.filter( ( l ) => l.remaining > 0 ) : lots;
+		const totals = list.reduce(
+			( acc, l ) => ( {
+				invested: acc.invested + l.invested,
+				recovered: acc.recovered + l.recovered,
+				pending: acc.pending + l.pending,
+			} ),
+			{ invested: 0, recovered: 0, pending: 0 }
+		);
+		const totalPct = totals.invested > 0 ? Math.round( ( totals.recovered / totals.invested ) * 100 ) : 0;
 
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:24px">
 				<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:10px">
 					<div>
 						<div style="font-size:15px;font-weight:700">Lotes de stock</div>
-						<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Cada compra/reposición, y cuánto se ha recuperado en ventas Pagado desde entonces</div>
+						<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Cada compra/reposición, y cuánto se ha recuperado (Pagado) o está por cobrar (Pre-venta/Crédito) desde entonces</div>
 					</div>
 					<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
 						<button type="button" class="lots-range-btn" data-range="abiertos" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'abiertos' === lotsRange ? 'var(--accent)' : 'transparent' };color:${ 'abiertos' === lotsRange ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Con stock</button>
 						<button type="button" class="lots-range-btn" data-range="todos" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'todos' === lotsRange ? 'var(--accent)' : 'transparent' };color:${ 'todos' === lotsRange ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Todos</button>
 					</div>
 				</div>
-				<div style="display:flex;flex-direction:column;gap:14px;margin-top:14px">
+
+				<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;background:var(--input-bg);border-radius:10px;padding:16px;margin:14px 0">
+					<div>
+						<div style="font-size:11px;color:var(--text-muted)">Invertido (${ list.length } ${ 1 === list.length ? 'lote' : 'lotes' })</div>
+						<div style="font-size:16px;font-weight:800">${ money( totals.invested ) }</div>
+					</div>
+					<div>
+						<div style="font-size:11px;color:var(--text-muted)">Recuperado (Pagado)</div>
+						<div style="font-size:16px;font-weight:800;color:oklch(0.72 0.16 152)">${ money( totals.recovered ) }</div>
+					</div>
+					<div>
+						<div style="font-size:11px;color:var(--text-muted)">Por cobrar</div>
+						<div style="font-size:16px;font-weight:800;color:${ totals.pending > 0 ? 'oklch(0.75 0.16 95)' : 'inherit' }">${ money( totals.pending ) }</div>
+					</div>
+					<div>
+						<div style="font-size:11px;color:var(--text-muted)">% recuperado</div>
+						<div style="font-size:16px;font-weight:800">${ totalPct }%</div>
+					</div>
+				</div>
+
+				<div style="display:flex;flex-direction:column;gap:14px">
 					${
 						0 === list.length
 							? '<div style="font-size:13px;color:var(--text-muted)">No hay lotes en este filtro.</div>'
@@ -405,19 +451,19 @@ export function renderAnalitica( main, ctx ) {
 	}
 
 	function lotRowHtml( l ) {
-		const barColor = l.recoveredPct >= 100 ? 'oklch(0.72 0.16 152)' : 'oklch(0.72 0.13 230)';
 		return `
 			<div style="border:1px solid var(--border);border-radius:10px;padding:12px">
 				<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap">
 					<div style="font-size:13px;font-weight:600">${ esc( l.name ) }${ l.size ? ' · ' + esc( l.size ) : '' }${ l.color ? ' · ' + esc( l.color ) : '' }</div>
 					<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">${ formatLotDate( l.createdAt ) } · ${ l.quantity } uds a ${ money( l.unitCost ) } · quedan ${ l.remaining }</div>
 				</div>
-				<div style="background:var(--input-bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:6px">
-					<div style="width:${ l.recoveredPct }%;height:100%;background:${ barColor };border-radius:20px"></div>
+				<div style="background:var(--input-bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:6px;display:flex">
+					<div style="width:${ l.recoveredPct }%;height:100%;background:oklch(0.72 0.16 152)"></div>
+					<div style="width:${ l.pendingPct }%;height:100%;background:oklch(0.75 0.16 95)"></div>
 				</div>
-				<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-muted)">
-					<span>Recuperado ${ money( l.recovered ) } de ${ money( l.invested ) }</span>
-					<span style="font-weight:700;color:${ barColor }">${ l.recoveredPct }%</span>
+				<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted)">
+					<span>Recuperado ${ money( l.recovered ) }${ l.pending > 0 ? ` · Por cobrar ${ money( l.pending ) }` : '' } de ${ money( l.invested ) }</span>
+					<span style="font-weight:700;color:oklch(0.72 0.16 152)">${ l.recoveredPctLabel }%</span>
 				</div>
 			</div>
 		`;
