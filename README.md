@@ -88,6 +88,16 @@ que ya existe.
   desde "Nuevo producto"/"Editar producto". El Centro de Recomendaciones del
   Dashboard usa este número (por producto, aplicado a todas sus variantes)
   en vez de un 10 fijo para todos.
+- **`009_estados_venta.sql`**: agrega `sales.status` (`pre_venta` | `credito`
+  | `pagado` | `anulado`, default `pagado`). `register_sale()` ahora recibe
+  el estado inicial — el stock se descuenta siempre, sin importar el estado,
+  para no vender dos veces la misma unidad mientras está pendiente de cobro.
+  Dos funciones nuevas, llamables por cualquier miembro de la empresa (no
+  solo administrador): `mark_sale_paid(sale_id)` pasa una venta pendiente a
+  Pagado, y `void_sale(sale_id)` anula una venta devolviendo el stock de
+  cada línea — el registro nunca se borra, solo cambia de estado. Pre-venta
+  y crédito no cuentan como "Ventas del mes"/"Ganancia" en el Dashboard
+  hasta que pasan a Pagado; mientras tanto suman al nuevo monto "Por cobrar".
 
 ## Variables de entorno del frontend
 

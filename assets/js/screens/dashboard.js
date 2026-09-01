@@ -49,17 +49,24 @@ export function renderDashboard( main, ctx ) {
 		// comparación con el mes pasado (para "ventas creciendo").
 		const earliestNeeded = new Date( Math.min( chartStart, startOfMonth, startOfLastMonth ) );
 
-		const [ variantsRes, salesRes, topSalesRes, expensesRes, membersRes ] = await Promise.all( [
+		const [ variantsRes, salesRes, topSalesRes, receivableRes, expensesRes, membersRes ] = await Promise.all( [
 			supabase.from( 'product_variants' ).select( 'size, color, cost, price, stock_quantity, products ( name, low_stock_threshold )' ).eq( 'organization_id', org.id ),
 			supabase
 				.from( 'sales' )
-				.select( 'created_at, vendor_id, sale_items ( quantity, unit_price, unit_cost )' )
+				.select( 'created_at, vendor_id, status, sale_items ( quantity, unit_price, unit_cost )' )
 				.eq( 'organization_id', org.id )
 				.gte( 'created_at', earliestNeeded.toISOString() ),
 			supabase
 				.from( 'sale_items' )
-				.select( 'quantity, unit_price, product_variants ( product_id, products ( name ) ), sales ( created_at )' )
+				.select( 'quantity, unit_price, product_variants ( product_id, products ( name ) ), sales ( created_at, status )' )
 				.eq( 'organization_id', org.id ),
+			// "Por cobrar": ventas en pre-venta/crédito, sin importar cuándo se
+			// hicieron — es plata pendiente de hoy, no un corte por fecha.
+			supabase
+				.from( 'sales' )
+				.select( 'total_amount' )
+				.eq( 'organization_id', org.id )
+				.in( 'status', [ 'pre_venta', 'credito' ] ),
 			supabase
 				.from( 'expenses' )
 				.select( 'amount' )
@@ -68,8 +75,8 @@ export function renderDashboard( main, ctx ) {
 			supabase.from( 'memberships' ).select( 'user_id, full_name' ).eq( 'organization_id', org.id ),
 		] );
 
-		if ( variantsRes.error || salesRes.error || topSalesRes.error || expensesRes.error ) {
-			errorMsg = 'No se pudo cargar el Dashboard: ' + ( variantsRes.error || salesRes.error || topSalesRes.error || expensesRes.error ).message;
+		if ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || expensesRes.error ) {
+			errorMsg = 'No se pudo cargar el Dashboard: ' + ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || expensesRes.error ).message;
 			draw();
 			return;
 		}
@@ -100,7 +107,10 @@ export function renderDashboard( main, ctx ) {
 		let lastMonthSold = 0;
 		const dayVendorQty = new Map(); // "YYYY-MM-DD|vendorId" -> qty
 
-		( salesRes.data || [] ).forEach( ( s ) => {
+		// Pre-venta/crédito ya descontaron stock pero todavía no son plata
+		// cobrada, y anulado se revirtió — solo pagado cuenta como venta real
+		// para estos montos y para el gráfico de actividad.
+		( salesRes.data || [] ).filter( ( s ) => 'pagado' === s.status ).forEach( ( s ) => {
 			const saleDate = new Date( s.created_at );
 			const isToday = saleDate >= startOfDay;
 			const isThisMonth = saleDate >= startOfMonth;
@@ -129,6 +139,7 @@ export function renderDashboard( main, ctx ) {
 		} );
 
 		const monthExpenses = ( expensesRes.data || [] ).reduce( ( sum, e ) => sum + Number( e.amount ), 0 );
+		const receivable = ( receivableRes.data || [] ).reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
 
 		stats = {
 			invested,
@@ -140,6 +151,7 @@ export function renderDashboard( main, ctx ) {
 			lastMonthSold,
 			monthExpenses,
 			netMonthProfit: monthProfit - monthExpenses,
+			receivable,
 		};
 
 		buildChartData( dayVendorQty, memberNames, chartStart );
@@ -176,8 +188,11 @@ export function renderDashboard( main, ctx ) {
 				.slice( 0, TOP_PRODUCTS_LIMIT );
 		}
 
-		topProductsAllTime = aggregate( items );
-		topProductsRecent = aggregate( items.filter( ( it ) => it.sales?.created_at && new Date( it.sales.created_at ) >= recentCutoff ) );
+		// Solo ventas Pagado — pre-venta/crédito todavía no son plata cobrada
+		// y anulado se revirtió, así que no cuentan como "vendido".
+		const paidItems = items.filter( ( it ) => 'pagado' === it.sales?.status );
+		topProductsAllTime = aggregate( paidItems );
+		topProductsRecent = aggregate( paidItems.filter( ( it ) => it.sales?.created_at && new Date( it.sales.created_at ) >= recentCutoff ) );
 	}
 
 	// Adaptación del "Centro de Recomendaciones" de ACP Core (WordPress) —
@@ -261,6 +276,14 @@ export function renderDashboard( main, ctx ) {
 			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:28px">
 				${ splitStatCard( 'Ventas de hoy', stats.todaySold, stats.todayProfit, 'ventas', { range: 'hoy' } ) }
 				${ splitStatCard( 'Ventas del mes', stats.monthSold, stats.monthProfit, 'ventas', { range: 'mes' } ) }
+				${ statCard(
+					'Por cobrar',
+					money( stats.receivable ),
+					'Pre-venta y crédito pendientes de pago — click para ver cuáles',
+					'ventas',
+					{ range: 'todos' },
+					stats.receivable > 0 ? 'oklch(0.75 0.16 95)' : undefined
+				) }
 			</div>
 
 			<div style="font-size:13px;font-weight:700;color:var(--text-muted);margin-bottom:10px">Gastos y ganancia neta (este mes)</div>

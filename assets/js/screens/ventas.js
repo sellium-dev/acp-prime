@@ -1,14 +1,22 @@
+const SALE_STATUS = {
+	pre_venta: { label: 'Pre-venta', color: 'oklch(0.72 0.13 230)' },
+	credito: { label: 'Crédito', color: 'oklch(0.75 0.16 95)' },
+	pagado: { label: 'Pagado', color: 'oklch(0.72 0.16 152)' },
+	anulado: { label: 'Anulado', color: 'oklch(0.65 0.18 25)' },
+};
+
 export function renderVentas( main, ctx ) {
 	const { supabase, org, membership } = ctx;
 	let variants = [];
 	let search = '';
 	let cart = []; // { variantId, name, size, color, price, stock, qty }
+	let saleStatus = 'pagado'; // estado con el que se registra la próxima venta
 	let saving = false;
 	let errorMsg = '';
 	let successMsg = '';
 	let sales = [];
 	let memberNames = new Map();
-	let range = 'mes' === ctx.navParams?.range ? 'mes' : 'hoy';
+	let range = [ 'mes', 'todos' ].includes( ctx.navParams?.range ) ? ctx.navParams.range : 'hoy';
 
 	load();
 
@@ -41,13 +49,17 @@ export function renderVentas( main, ctx ) {
 		}
 		cutoff.setHours( 0, 0, 0, 0 );
 
+		let salesQuery = supabase
+			.from( 'sales' )
+			.select( 'id, customer_name, total_amount, created_at, vendor_id, status, sale_items ( quantity )' )
+			.eq( 'organization_id', org.id )
+			.order( 'created_at', { ascending: false } );
+		if ( 'todos' !== range ) {
+			salesQuery = salesQuery.gte( 'created_at', cutoff.toISOString() );
+		}
+
 		const [ salesRes, membersRes ] = await Promise.all( [
-			supabase
-				.from( 'sales' )
-				.select( 'id, customer_name, total_amount, created_at, vendor_id, sale_items ( quantity )' )
-				.eq( 'organization_id', org.id )
-				.gte( 'created_at', cutoff.toISOString() )
-				.order( 'created_at', { ascending: false } ),
+			salesQuery,
 			supabase.from( 'memberships' ).select( 'user_id, full_name' ).eq( 'organization_id', org.id ),
 		] );
 
@@ -91,6 +103,19 @@ export function renderVentas( main, ctx ) {
 						<label>Cliente (opcional)</label>
 						<input id="v-customer" placeholder="Nombre del cliente" style="padding:10px 12px" />
 					</div>
+					<div class="acp-field">
+						<label>Estado</label>
+						<select id="v-status" style="background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--text);font-size:14px;font-family:inherit">
+							<option value="pagado" ${ 'pagado' === saleStatus ? 'selected' : '' }>Pagado</option>
+							<option value="pre_venta" ${ 'pre_venta' === saleStatus ? 'selected' : '' }>Pre-venta</option>
+							<option value="credito" ${ 'credito' === saleStatus ? 'selected' : '' }>Crédito</option>
+						</select>
+						${
+							'pagado' !== saleStatus
+								? '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Descuenta el stock igual, pero no cuenta como venta en el Dashboard hasta que la marques como Pagado.</div>'
+								: ''
+						}
+					</div>
 					<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;margin:14px 0">
 						<span>Total</span><span>${ money( cartTotal ) }</span>
 					</div>
@@ -105,6 +130,7 @@ export function renderVentas( main, ctx ) {
 				<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
 					<button type="button" class="v-range-btn" data-range="hoy" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'hoy' === range ? 'var(--accent)' : 'transparent' };color:${ 'hoy' === range ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Hoy</button>
 					<button type="button" class="v-range-btn" data-range="mes" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'mes' === range ? 'var(--accent)' : 'transparent' };color:${ 'mes' === range ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Este mes</button>
+					<button type="button" class="v-range-btn" data-range="todos" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'todos' === range ? 'var(--accent)' : 'transparent' };color:${ 'todos' === range ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Todos</button>
 				</div>
 			</div>
 			${ 0 === sales.length ? '<div class="acp-empty-state">No hay ventas en este rango.</div>' : salesTableHtml() }
@@ -148,23 +174,40 @@ export function renderVentas( main, ctx ) {
 	}
 
 	function salesTableHtml() {
+		const cols = 'minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.6fr) minmax(0,0.8fr) minmax(0,0.9fr)';
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden">
-				<div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr);gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
-					<div>Fecha</div><div>Vendedor</div><div>Cliente</div><div>Ítems</div><div>Total</div>
+				<div style="display:grid;grid-template-columns:${ cols };gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
+					<div>Fecha</div><div>Vendedor</div><div>Cliente</div><div>Ítems</div><div>Total</div><div>Estado</div>
 				</div>
 				${ sales
-					.map(
-						( s ) => `
-					<div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.2fr) minmax(0,1fr) minmax(0,0.8fr) minmax(0,0.8fr);gap:12px;padding:12px 18px;font-size:13px;border-bottom:1px solid var(--border)">
-						<div>${ formatSaleDateTime( s.created_at ) }</div>
-						<div>${ esc( memberNames.get( s.vendor_id ) || '—' ) }</div>
-						<div style="color:var(--text-muted)">${ esc( s.customer_name || '—' ) }</div>
-						<div>${ s.sale_items.reduce( ( n, it ) => n + it.quantity, 0 ) }</div>
-						<div style="font-weight:700">${ money( s.total_amount ) }</div>
+					.map( ( s ) => {
+						const status = SALE_STATUS[ s.status ] || SALE_STATUS.pagado;
+						const pending = 'pre_venta' === s.status || 'credito' === s.status;
+						const voidable = 'anulado' !== s.status;
+						return `
+					<div style="padding:12px 18px;border-bottom:1px solid var(--border)">
+						<div style="display:grid;grid-template-columns:${ cols };gap:12px;font-size:13px;align-items:center">
+							<div>${ formatSaleDateTime( s.created_at ) }</div>
+							<div>${ esc( memberNames.get( s.vendor_id ) || '—' ) }</div>
+							<div style="color:var(--text-muted)">${ esc( s.customer_name || '—' ) }</div>
+							<div>${ s.sale_items.reduce( ( n, it ) => n + it.quantity, 0 ) }</div>
+							<div style="font-weight:700">${ money( s.total_amount ) }</div>
+							<div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${ status.color.replace( ')', ' / 0.15)' ) };color:${ status.color };width:fit-content">${ status.label }</div>
+						</div>
+						${
+							pending || voidable
+								? `
+							<div style="display:flex;gap:8px;margin-top:10px">
+								${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }">Marcar pagado</button>` : '' }
+								${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }">Anular</button>` : '' }
+							</div>
+						`
+								: ''
+						}
 					</div>
-				`
-					)
+				`;
+					} )
 					.join( '' ) }
 			</div>
 		`;
@@ -193,6 +236,21 @@ export function renderVentas( main, ctx ) {
 		if ( submitBtn ) {
 			submitBtn.addEventListener( 'click', handleSubmit );
 		}
+
+		const statusSelect = document.getElementById( 'v-status' );
+		if ( statusSelect ) {
+			statusSelect.addEventListener( 'change', () => {
+				saleStatus = statusSelect.value;
+				draw();
+			} );
+		}
+
+		main.querySelectorAll( '[data-mark-paid]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleMarkPaid( btn.dataset.markPaid ) );
+		} );
+		main.querySelectorAll( '[data-void]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleVoidSale( btn.dataset.void ) );
+		} );
 
 		main.querySelectorAll( '.v-range-btn' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', async () => {
@@ -247,6 +305,7 @@ export function renderVentas( main, ctx ) {
 			p_organization_id: org.id,
 			p_customer_name: customerName,
 			p_items: items,
+			p_status: saleStatus,
 		} );
 
 		saving = false;
@@ -258,7 +317,38 @@ export function renderVentas( main, ctx ) {
 		}
 
 		cart = [];
+		saleStatus = 'pagado';
 		successMsg = 'Venta registrada.';
+		await Promise.all( [ loadVariants(), loadSales() ] );
+		draw();
+	}
+
+	async function handleMarkPaid( saleId ) {
+		errorMsg = '';
+		successMsg = '';
+		const { error } = await supabase.rpc( 'mark_sale_paid', { p_sale_id: saleId } );
+		if ( error ) {
+			errorMsg = 'No se pudo marcar como pagada: ' + error.message;
+			draw();
+			return;
+		}
+		successMsg = 'Venta marcada como pagada.';
+		await loadSales();
+		draw();
+	}
+
+	async function handleVoidSale( saleId ) {
+		if ( ! window.confirm( 'Esto anula la venta y devuelve el stock. ¿Confirmas?' ) ) return;
+
+		errorMsg = '';
+		successMsg = '';
+		const { error } = await supabase.rpc( 'void_sale', { p_sale_id: saleId } );
+		if ( error ) {
+			errorMsg = 'No se pudo anular la venta: ' + error.message;
+			draw();
+			return;
+		}
+		successMsg = 'Venta anulada — el stock fue devuelto.';
 		await Promise.all( [ loadVariants(), loadSales() ] );
 		draw();
 	}
