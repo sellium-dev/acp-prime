@@ -443,6 +443,31 @@ export function renderProductos( main, ctx ) {
 					<div id="p-shipping-summary" style="font-size:12px;color:var(--text-muted)"></div>
 				</div>
 
+				<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px;margin-bottom:12px" id="p-bulk-toggle">+ Cargar varias tallas a la vez</button>
+				<div id="p-bulk-box" style="display:none;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;max-width:480px">
+					<div style="font-size:11px;color:var(--text-muted);margin-bottom:10px">Para cuando el color, costo y precio son los mismos y solo cambia la talla y el stock — escribe eso una vez y se genera una fila por talla.</div>
+					<div class="acp-field" style="margin-bottom:8px">
+						<label>Color (opcional, se aplica a todas)</label>
+						<input id="bulk-color" placeholder="Negro" style="padding:9px 10px" />
+					</div>
+					<div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px;margin-bottom:8px">
+						<div class="acp-field" style="margin-bottom:0">
+							<label>Costo</label>
+							<input id="bulk-cost" type="number" step="0.01" style="padding:9px 10px" />
+						</div>
+						<div class="acp-field" style="margin-bottom:0">
+							<label>Precio (opcional)</label>
+							<input id="bulk-price" type="number" step="0.01" style="padding:9px 10px" />
+						</div>
+					</div>
+					<div class="acp-field" style="margin-bottom:8px">
+						<label>Tallas (separadas por coma)</label>
+						<input id="bulk-sizes" placeholder="S, M, L" style="padding:9px 10px" />
+					</div>
+					<div id="bulk-stock-rows"></div>
+					<button type="button" class="acp-btn-primary" id="bulk-apply" style="width:auto;padding:8px 16px;margin-top:8px">Agregar estas variantes</button>
+				</div>
+
 				<div id="p-variants"></div>
 				<button type="button" class="acp-btn-secondary" style="width:auto;padding:8px 14px;margin-top:6px" id="p-add-variant">+ Agregar variante</button>
 
@@ -488,7 +513,88 @@ export function renderProductos( main, ctx ) {
 			if ( e.target.matches( '.v-cost, .v-stock, #p-shipping-cost, #p-shipping-margin' ) ) {
 				updatePriceSuggestions();
 			}
+			if ( e.target.id === 'bulk-sizes' ) {
+				drawBulkStockRows();
+			}
 		} );
+
+		const bulkToggle = document.getElementById( 'p-bulk-toggle' );
+		bulkToggle.addEventListener( 'click', () => {
+			const box = document.getElementById( 'p-bulk-box' );
+			const isHidden = 'none' === box.style.display;
+			box.style.display = isHidden ? 'block' : 'none';
+			bulkToggle.textContent = isHidden ? 'Ocultar carga rápida' : '+ Cargar varias tallas a la vez';
+			if ( isHidden ) {
+				document.getElementById( 'bulk-color' ).focus();
+			}
+		} );
+		document.getElementById( 'bulk-apply' ).addEventListener( 'click', handleBulkApply );
+	}
+
+	// Lee "S, M, L" y dibuja un input de stock por cada talla — el color,
+	// costo y precio se escriben una sola vez y se aplican a todas.
+	function drawBulkStockRows() {
+		const wrap = document.getElementById( 'bulk-stock-rows' );
+		const sizesInput = document.getElementById( 'bulk-sizes' );
+		if ( ! wrap || ! sizesInput ) return;
+
+		const sizes = Array.from( new Set( sizesInput.value.split( ',' ).map( ( s ) => s.trim() ).filter( Boolean ) ) );
+
+		wrap.innerHTML = sizes
+			.map(
+				( size, i ) => `
+			<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px" data-bulk-size="${ escAttr( size ) }">
+				<div style="flex:1;font-size:13px">${ esc( size ) }</div>
+				<input class="bulk-stock" type="number" placeholder="Stock" style="width:100px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+			</div>
+		`
+			)
+			.join( '' );
+	}
+
+	function handleBulkApply() {
+		const color = document.getElementById( 'bulk-color' ).value.trim();
+		const cost = document.getElementById( 'bulk-cost' ).value;
+		const price = document.getElementById( 'bulk-price' ).value;
+		const rows = document.querySelectorAll( '#bulk-stock-rows [data-bulk-size]' );
+
+		if ( 0 === rows.length ) {
+			errorMsg = 'Escribe al menos una talla para cargar en lote.';
+			draw();
+			return;
+		}
+
+		syncFormVariantsFromDom();
+
+		// Si la única fila que hay es la vacía por defecto de "Nuevo producto",
+		// no la dejamos suelta — se reemplaza por las del lote.
+		formVariants = formVariants.filter(
+			( v ) => v.id || v.size || v.color || v.cost || v.price || v.stock_quantity
+		);
+
+		rows.forEach( ( row ) => {
+			formVariants.push( {
+				id: null,
+				size: row.dataset.bulkSize,
+				color: color || '',
+				cost,
+				price,
+				stock_quantity: row.querySelector( '.bulk-stock' ).value,
+			} );
+		} );
+
+		errorMsg = '';
+		drawVariantRows();
+
+		// Limpiar y cerrar la caja para el próximo lote (ej. otro color).
+		document.getElementById( 'bulk-color' ).value = '';
+		document.getElementById( 'bulk-cost' ).value = '';
+		document.getElementById( 'bulk-price' ).value = '';
+		document.getElementById( 'bulk-sizes' ).value = '';
+		document.getElementById( 'bulk-stock-rows' ).innerHTML = '';
+		const box = document.getElementById( 'p-bulk-box' );
+		box.style.display = 'none';
+		document.getElementById( 'p-bulk-toggle' ).textContent = '+ Cargar varias tallas a la vez';
 	}
 
 	// El costo de envío se reparte entre las unidades totales de todas las
