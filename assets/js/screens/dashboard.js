@@ -53,7 +53,7 @@ export function renderDashboard( main, ctx ) {
 			supabase.from( 'product_variants' ).select( 'size, color, cost, price, stock_quantity, products ( name, low_stock_threshold )' ).eq( 'organization_id', org.id ),
 			supabase
 				.from( 'sales' )
-				.select( 'created_at, vendor_id, status, sale_items ( quantity, unit_price, unit_cost )' )
+				.select( 'created_at, vendor_id, status, total_amount, sale_items ( quantity, unit_price, unit_cost )' )
 				.eq( 'organization_id', org.id )
 				.gte( 'created_at', earliestNeeded.toISOString() ),
 			supabase
@@ -141,6 +141,12 @@ export function renderDashboard( main, ctx ) {
 		const monthExpenses = ( expensesRes.data || [] ).reduce( ( sum, e ) => sum + Number( e.amount ), 0 );
 		const receivable = ( receivableRes.data || [] ).reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
 
+		// Cuánto se anuló este mes — mismo rango que ya trae salesRes, así
+		// que se aprovecha esa misma consulta en vez de pedir otra.
+		const voidedThisMonth = ( salesRes.data || [] )
+			.filter( ( s ) => 'anulado' === s.status && new Date( s.created_at ) >= startOfMonth )
+			.reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
+
 		stats = {
 			invested,
 			potentialProfit,
@@ -152,6 +158,7 @@ export function renderDashboard( main, ctx ) {
 			monthExpenses,
 			netMonthProfit: monthProfit - monthExpenses,
 			receivable,
+			voidedThisMonth,
 		};
 
 		buildChartData( dayVendorQty, memberNames, chartStart );
@@ -283,6 +290,14 @@ export function renderDashboard( main, ctx ) {
 					'ventas',
 					{ range: 'todos' },
 					stats.receivable > 0 ? 'oklch(0.75 0.16 95)' : undefined
+				) }
+				${ statCard(
+					'Devuelto este mes',
+					money( stats.voidedThisMonth ),
+					'Ventas anuladas — click para ver el detalle',
+					'ventas',
+					{ range: 'mes', status: 'anulado' },
+					stats.voidedThisMonth > 0 ? 'oklch(0.65 0.18 25)' : undefined
 				) }
 			</div>
 

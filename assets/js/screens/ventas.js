@@ -17,6 +17,7 @@ export function renderVentas( main, ctx ) {
 	let sales = [];
 	let memberNames = new Map();
 	let range = [ 'mes', 'todos' ].includes( ctx.navParams?.range ) ? ctx.navParams.range : 'hoy';
+	let statusFilter = ctx.navParams?.status && SALE_STATUS[ ctx.navParams.status ] ? ctx.navParams.status : null;
 
 	load();
 
@@ -70,6 +71,7 @@ export function renderVentas( main, ctx ) {
 	function draw() {
 		const filtered = filterVariants();
 		const cartTotal = cart.reduce( ( sum, item ) => sum + item.price * item.qty, 0 );
+		const filteredSales = statusFilter ? sales.filter( ( s ) => s.status === statusFilter ) : sales;
 
 		main.innerHTML = `
 			<div style="margin-bottom:24px">
@@ -125,7 +127,7 @@ export function renderVentas( main, ctx ) {
 				</div>
 			</div>
 
-			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+			<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
 				<div style="font-size:15px;font-weight:700">Ventas</div>
 				<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
 					<button type="button" class="v-range-btn" data-range="hoy" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'hoy' === range ? 'var(--accent)' : 'transparent' };color:${ 'hoy' === range ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Hoy</button>
@@ -133,7 +135,17 @@ export function renderVentas( main, ctx ) {
 					<button type="button" class="v-range-btn" data-range="todos" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'todos' === range ? 'var(--accent)' : 'transparent' };color:${ 'todos' === range ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Todos</button>
 				</div>
 			</div>
-			${ 0 === sales.length ? '<div class="acp-empty-state">No hay ventas en este rango.</div>' : salesTableHtml() }
+			${
+				statusFilter
+					? `
+				<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:var(--text-muted)">
+					Mostrando solo: <span style="font-weight:700;color:${ SALE_STATUS[ statusFilter ].color }">${ SALE_STATUS[ statusFilter ].label }</span>
+					<button type="button" id="v-clear-status-filter" style="background:none;border:none;color:var(--text-muted);cursor:pointer;text-decoration:underline;font-size:12px">Quitar filtro</button>
+				</div>
+			`
+					: ''
+			}
+			${ 0 === filteredSales.length ? '<div class="acp-empty-state">No hay ventas en este rango.</div>' : salesTableHtml( filteredSales ) }
 		`;
 
 		wireEvents();
@@ -184,14 +196,14 @@ export function renderVentas( main, ctx ) {
 		`;
 	}
 
-	function salesTableHtml() {
+	function salesTableHtml( rows ) {
 		const cols = 'minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.6fr) minmax(0,0.8fr) minmax(0,0.9fr)';
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden">
 				<div style="display:grid;grid-template-columns:${ cols };gap:12px;padding:12px 18px;font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border)">
 					<div>Fecha</div><div>Vendedor</div><div>Cliente</div><div>Ítems</div><div>Total</div><div>Estado</div>
 				</div>
-				${ sales
+				${ rows
 					.map( ( s ) => {
 						const status = SALE_STATUS[ s.status ] || SALE_STATUS.pagado;
 						const pending = 'pre_venta' === s.status || 'credito' === s.status;
@@ -282,10 +294,19 @@ export function renderVentas( main, ctx ) {
 		main.querySelectorAll( '.v-range-btn' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', async () => {
 				range = btn.dataset.range;
+				statusFilter = null;
 				await loadSales();
 				draw();
 			} );
 		} );
+
+		const clearFilterBtn = document.getElementById( 'v-clear-status-filter' );
+		if ( clearFilterBtn ) {
+			clearFilterBtn.addEventListener( 'click', () => {
+				statusFilter = null;
+				draw();
+			} );
+		}
 	}
 
 	function addToCart( variantId ) {
