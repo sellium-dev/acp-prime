@@ -52,7 +52,7 @@ export function renderVentas( main, ctx ) {
 
 		let salesQuery = supabase
 			.from( 'sales' )
-			.select( 'id, customer_name, total_amount, created_at, vendor_id, status, sale_items ( quantity )' )
+			.select( 'id, customer_name, total_amount, created_at, vendor_id, status, voided_at, sale_items ( quantity )' )
 			.eq( 'organization_id', org.id )
 			.order( 'created_at', { ascending: false } );
 		if ( 'todos' !== range ) {
@@ -226,6 +226,11 @@ export function renderVentas( main, ctx ) {
 								${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }">Anular</button>` : '' }
 							</div>
 						`
+								: ''
+						}
+						${
+							'anulado' === s.status && s.voided_at
+								? `<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Anulada el ${ formatSaleDateTime( s.voided_at ) }</div>`
 								: ''
 						}
 					</div>

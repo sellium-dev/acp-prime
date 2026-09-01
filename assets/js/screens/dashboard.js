@@ -59,7 +59,7 @@ export function renderDashboard( main, ctx ) {
 		const trendStart = new Date( startOfMonth );
 		trendStart.setMonth( trendStart.getMonth() - ( MONTHLY_TREND_MAX_MONTHS - 1 ) );
 
-		const [ variantsRes, salesRes, topSalesRes, receivableRes, expensesRes, membersRes ] = await Promise.all( [
+		const [ variantsRes, salesRes, topSalesRes, receivableRes, voidedRes, expensesRes, membersRes ] = await Promise.all( [
 			supabase.from( 'product_variants' ).select( 'size, color, cost, price, stock_quantity, products ( name, low_stock_threshold )' ).eq( 'organization_id', org.id ),
 			supabase
 				.from( 'sales' )
@@ -77,6 +77,17 @@ export function renderDashboard( main, ctx ) {
 				.select( 'total_amount' )
 				.eq( 'organization_id', org.id )
 				.in( 'status', [ 'pre_venta', 'credito' ] ),
+			// "Devuelto este mes": lo que importa es CUÁNDO se anuló, no cuándo
+			// se hizo la venta original — una pre-venta de hace 2 meses que se
+			// anula hoy cuenta en el mes de HOY. Por eso es una consulta aparte
+			// filtrando por voided_at, no algo sacado de salesRes (que solo
+			// llega hasta el mes pasado y usa created_at).
+			supabase
+				.from( 'sales' )
+				.select( 'total_amount' )
+				.eq( 'organization_id', org.id )
+				.eq( 'status', 'anulado' )
+				.gte( 'voided_at', startOfMonth.toISOString() ),
 			supabase
 				.from( 'expenses' )
 				.select( 'amount, expense_date' )
@@ -85,8 +96,8 @@ export function renderDashboard( main, ctx ) {
 			supabase.from( 'memberships' ).select( 'user_id, full_name' ).eq( 'organization_id', org.id ),
 		] );
 
-		if ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || expensesRes.error ) {
-			errorMsg = 'No se pudo cargar el Dashboard: ' + ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || expensesRes.error ).message;
+		if ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || voidedRes.error || expensesRes.error ) {
+			errorMsg = 'No se pudo cargar el Dashboard: ' + ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || voidedRes.error || expensesRes.error ).message;
 			draw();
 			return;
 		}
@@ -159,11 +170,7 @@ export function renderDashboard( main, ctx ) {
 			.reduce( ( sum, e ) => sum + Number( e.amount ), 0 );
 		const receivable = ( receivableRes.data || [] ).reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
 
-		// Cuánto se anuló este mes — mismo rango que ya trae salesRes, así
-		// que se aprovecha esa misma consulta en vez de pedir otra.
-		const voidedThisMonth = ( salesRes.data || [] )
-			.filter( ( s ) => 'anulado' === s.status && new Date( s.created_at ) >= startOfMonth )
-			.reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
+		const voidedThisMonth = ( voidedRes.data || [] ).reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
 
 		stats = {
 			invested,

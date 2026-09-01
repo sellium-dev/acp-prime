@@ -104,6 +104,12 @@ que ya existe.
   Ventas. El costo sigue siendo el de catálogo, así que si el precio
   manual queda por debajo del costo, la utilidad de esa línea da negativa
   a propósito, reflejándose así en "Ganancia" del Dashboard.
+- **`011_fecha_anulacion.sql`**: agrega `sales.voided_at`, que
+  `void_sale()` ahora completa con la fecha real de la anulación. "Devuelto
+  este mes" en el Dashboard se calcula por `voided_at`, no por la fecha de
+  la venta original — así una pre-venta de agosto que se anula en
+  septiembre cuenta en septiembre, no en agosto. Ventas muestra "Anulada
+  el ..." con esa fecha en cada venta anulada.
 
 ## Variables de entorno del frontend
 
