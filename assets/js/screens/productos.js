@@ -433,6 +433,11 @@ export function renderProductos( main, ctx ) {
 		draw();
 
 		try {
+			// Todas las variantes que se guarden en esta misma reposición
+			// pertenecen a la misma carga, aunque sean productos distintos —
+			// la carga se crea la primera vez que hace falta (si todas las
+			// filas se fusionan con "mismo lote", nunca se crea ninguna).
+			let purchaseId = null;
 			for ( const u of updates ) {
 				const { error } = await supabase
 					.from( 'product_variants' )
@@ -458,12 +463,22 @@ export function renderProductos( main, ctx ) {
 						.eq( 'id', lot.id );
 					if ( lotError ) throw lotError;
 				} else {
+					if ( ! purchaseId ) {
+						const { data: purchase, error: purchaseError } = await supabase
+							.from( 'stock_purchases' )
+							.insert( { organization_id: org.id } )
+							.select( 'id' )
+							.single();
+						if ( purchaseError ) throw purchaseError;
+						purchaseId = purchase.id;
+					}
 					const { error: lotError } = await supabase.from( 'stock_lots' ).insert( {
 						organization_id: org.id,
 						product_variant_id: u.variantId,
 						quantity: u.addQty,
 						remaining_quantity: u.addQty,
 						unit_cost: u.cost,
+						purchase_id: purchaseId,
 					} );
 					if ( lotError ) throw lotError;
 				}
@@ -923,7 +938,9 @@ export function renderProductos( main, ctx ) {
 
 				// El stock inicial de una variante nueva es, por definición, su
 				// primer lote — no hace falta preguntar nada, a diferencia de
-				// "Reponer stock" donde sí puede ser una compra distinta.
+				// "Reponer stock" donde sí puede ser una compra distinta. Si son
+				// varias variantes (tallas/colores) del mismo producto nuevo,
+				// todas quedan en la misma carga.
 				const newLots = ( insertedVariants || [] )
 					.filter( ( v ) => v.stock_quantity > 0 )
 					.map( ( v ) => ( {
@@ -934,6 +951,15 @@ export function renderProductos( main, ctx ) {
 						unit_cost: v.cost,
 					} ) );
 				if ( newLots.length > 0 ) {
+					const { data: purchase, error: purchaseError } = await supabase
+						.from( 'stock_purchases' )
+						.insert( { organization_id: org.id } )
+						.select( 'id' )
+						.single();
+					if ( purchaseError ) throw purchaseError;
+					newLots.forEach( ( lot ) => {
+						lot.purchase_id = purchase.id;
+					} );
 					const { error: lotError } = await supabase.from( 'stock_lots' ).insert( newLots );
 					if ( lotError ) throw lotError;
 				}

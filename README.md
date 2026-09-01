@@ -127,6 +127,16 @@ que ya existe.
   nuevo o el mismo que la última vez (con un promedio ponderado del
   costo). Analítica muestra cada lote con una barra de % recuperado
   (ventas Pagado de ese lote específico, contra lo que costó comprarlo).
+- **`014_cargas_de_compra.sql`**: tabla `stock_purchases` — agrupa los
+  lotes de una misma compra/reposición en una sola "carga" (antes cada
+  variante quedaba como un lote suelto, aunque se hubieran cargado juntas).
+  `stock_lots.purchase_id` (nueva columna) referencia la carga. Guardar un
+  producto nuevo con varias tallas, o una reposición de varios productos a
+  la vez, crea una sola carga para todo ese guardado. Analítica en Lotes de
+  stock ahora muestra una barra resumen por carga ("Carga 1", "Carga 2", …,
+  numeradas por fecha real, listadas de más cerca del 100% recuperado a
+  menos) y, al hacer clic, despliega el detalle de cada producto/talla que
+  trajo esa compra.
 
 ## Variables de entorno del frontend
 

@@ -5,6 +5,45 @@ const SALE_STATUS = {
 	anulado: { label: 'Anulado', color: 'oklch(0.65 0.18 25)' },
 };
 
+// Mismo criterio de orden de tallas que en Productos — ver ese archivo para
+// el detalle de por qué se agrupan así.
+const SIZE_RANK = {
+	XXS: 0,
+	XS: 1,
+	S: 2,
+	M: 3,
+	L: 4,
+	XL: 5,
+	XXL: 6,
+	'2XL': 6,
+	XXXL: 7,
+	'3XL': 7,
+	XXXXL: 8,
+	'4XL': 8,
+};
+
+function sizeSortKey( size ) {
+	const normalized = ( size || '' ).trim().toUpperCase();
+	if ( normalized in SIZE_RANK ) {
+		return [ 0, SIZE_RANK[ normalized ], normalized ];
+	}
+	const asNumber = Number( normalized );
+	if ( '' !== normalized && ! Number.isNaN( asNumber ) ) {
+		return [ 1, asNumber, normalized ];
+	}
+	return [ 2, 0, normalized ];
+}
+
+function compareByProductThenSize( a, b ) {
+	const nameCompare = a.products.name.localeCompare( b.products.name );
+	if ( 0 !== nameCompare ) return nameCompare;
+	const ka = sizeSortKey( a.size );
+	const kb = sizeSortKey( b.size );
+	if ( ka[ 0 ] !== kb[ 0 ] ) return ka[ 0 ] - kb[ 0 ];
+	if ( ka[ 1 ] !== kb[ 1 ] ) return ka[ 1 ] - kb[ 1 ];
+	return ka[ 2 ].localeCompare( kb[ 2 ] );
+}
+
 export function renderVentas( main, ctx ) {
 	const { supabase, org, membership } = ctx;
 	let variants = [];
@@ -154,9 +193,9 @@ export function renderVentas( main, ctx ) {
 	}
 
 	function filterVariants() {
-		if ( '' === search.trim() ) return variants;
 		const q = search.trim().toLowerCase();
-		return variants.filter( ( v ) => v.products.name.toLowerCase().includes( q ) );
+		const list = '' === q ? variants : variants.filter( ( v ) => v.products.name.toLowerCase().includes( q ) );
+		return [ ...list ].sort( compareByProductThenSize );
 	}
 
 	function variantRowHtml( v ) {

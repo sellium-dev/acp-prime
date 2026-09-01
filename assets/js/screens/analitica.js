@@ -18,6 +18,8 @@ export function renderAnalitica( main, ctx ) {
 	let voidedByProduct = [];
 	let voidedSummary = { count: 0, units: 0, total: 0 };
 	let lots = [];
+	let purchases = []; // cargas — cada una agrupa uno o varios lotes guardados juntos
+	let selectedPurchaseId = null; // carga con el detalle por producto desplegado
 	let lotsRange = 'abiertos'; // 'abiertos' | 'todos'
 	let errorMsg = '';
 
@@ -50,7 +52,9 @@ export function renderAnalitica( main, ctx ) {
 				.gte( 'expense_date', ymd( trendStart ) ),
 			supabase
 				.from( 'stock_lots' )
-				.select( 'id, quantity, remaining_quantity, unit_cost, created_at, product_variants ( size, color, products ( name ) )' )
+				.select(
+					'id, quantity, remaining_quantity, unit_cost, created_at, purchase_id, product_variants ( size, color, products ( name ) ), stock_purchases ( created_at )'
+				)
 				.eq( 'organization_id', org.id )
 				.order( 'created_at', { ascending: false } ),
 		] );
@@ -122,8 +126,66 @@ export function renderAnalitica( main, ctx ) {
 				recoveredPct,
 				pendingPct: Math.round( combinedPct ) - recoveredPct,
 				recoveredPctLabel: invested > 0 ? Math.min( 100, Math.round( ( recovered / invested ) * 100 ) ) : 0,
+				combinedPct,
+				purchaseId: lot.purchase_id,
+				purchaseCreatedAt: lot.stock_purchases?.created_at,
 			};
 		} );
+
+		// De más cerca del 100% (pagado + por cobrar) a más lejos — así lo
+		// primero que se ve son los lotes casi recuperados y al final los que
+		// todavía no han movido nada.
+		lots.sort( ( a, b ) => b.combinedPct - a.combinedPct );
+
+		buildPurchases();
+	}
+
+	// Agrupa los lotes por carga (una compra puede traer varios
+	// productos/tallas a la vez) — "Carga N" se numera por orden cronológico
+	// real, pero la lista se muestra ordenada por % recuperado igual que los
+	// lotes sueltos.
+	function buildPurchases() {
+		const groups = new Map();
+		lots.forEach( ( l ) => {
+			// Los lotes de antes de esta función (si alguno quedara sin carga
+			// asignada) se muestran cada uno como su propia carga suelta, en
+			// vez de desaparecer.
+			const key = l.purchaseId || `lote-${ l.id }`;
+			if ( ! groups.has( key ) ) {
+				groups.set( key, { id: key, createdAt: l.purchaseCreatedAt || l.createdAt, lots: [] } );
+			}
+			groups.get( key ).lots.push( l );
+		} );
+
+		const ordered = Array.from( groups.values() ).sort( ( a, b ) => new Date( a.createdAt ) - new Date( b.createdAt ) );
+		ordered.forEach( ( p, i ) => {
+			p.label = `Carga ${ i + 1 }`;
+		} );
+
+		purchases = ordered.map( ( p ) => {
+			const invested = p.lots.reduce( ( sum, l ) => sum + l.invested, 0 );
+			const recovered = p.lots.reduce( ( sum, l ) => sum + l.recovered, 0 );
+			const pending = p.lots.reduce( ( sum, l ) => sum + l.pending, 0 );
+			const combinedPct = invested > 0 ? Math.min( 100, ( ( recovered + pending ) / invested ) * 100 ) : 0;
+			const recoveredPct = recovered + pending > 0 ? Math.round( ( combinedPct * recovered ) / ( recovered + pending ) ) : 0;
+			return {
+				id: p.id,
+				label: p.label,
+				createdAt: p.createdAt,
+				itemCount: p.lots.length,
+				hasStock: p.lots.some( ( l ) => l.remaining > 0 ),
+				lots: [ ...p.lots ].sort( ( a, b ) => b.combinedPct - a.combinedPct ),
+				invested,
+				recovered,
+				pending,
+				recoveredPct,
+				pendingPct: Math.round( combinedPct ) - recoveredPct,
+				recoveredPctLabel: invested > 0 ? Math.min( 100, Math.round( ( recovered / invested ) * 100 ) ) : 0,
+				sortPct: invested > 0 ? ( recovered + pending ) / invested : 0,
+			};
+		} );
+
+		purchases.sort( ( a, b ) => b.sortPct - a.sortPct );
 	}
 
 	// Ganancia neta (ventas Pagado menos gastos) por mes, últimos
@@ -287,6 +349,14 @@ export function renderAnalitica( main, ctx ) {
 		main.querySelectorAll( '.lots-range-btn' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => {
 				lotsRange = btn.dataset.range;
+				selectedPurchaseId = null;
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '.lot-purchase-row' ).forEach( ( row ) => {
+			row.addEventListener( 'click', () => {
+				const id = row.dataset.purchaseId;
+				selectedPurchaseId = selectedPurchaseId === id ? null : id;
 				draw();
 			} );
 		} );
@@ -396,12 +466,12 @@ export function renderAnalitica( main, ctx ) {
 	}
 
 	function lotsHtml() {
-		const list = 'abiertos' === lotsRange ? lots.filter( ( l ) => l.remaining > 0 ) : lots;
+		const list = 'abiertos' === lotsRange ? purchases.filter( ( p ) => p.hasStock ) : purchases;
 		const totals = list.reduce(
-			( acc, l ) => ( {
-				invested: acc.invested + l.invested,
-				recovered: acc.recovered + l.recovered,
-				pending: acc.pending + l.pending,
+			( acc, p ) => ( {
+				invested: acc.invested + p.invested,
+				recovered: acc.recovered + p.recovered,
+				pending: acc.pending + p.pending,
 			} ),
 			{ invested: 0, recovered: 0, pending: 0 }
 		);
@@ -411,8 +481,8 @@ export function renderAnalitica( main, ctx ) {
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:24px">
 				<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:10px">
 					<div>
-						<div style="font-size:15px;font-weight:700">Lotes de stock</div>
-						<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Cada compra/reposición, y cuánto se ha recuperado (Pagado) o está por cobrar (Pre-venta/Crédito) desde entonces</div>
+						<div style="font-size:15px;font-weight:700">Cargas de stock</div>
+						<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Cada compra/reposición que guardaste (puede traer varios productos), y cuánto se ha recuperado (Pagado) o está por cobrar (Pre-venta/Crédito) desde entonces — toca una carga para ver el detalle por producto</div>
 					</div>
 					<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
 						<button type="button" class="lots-range-btn" data-range="abiertos" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'abiertos' === lotsRange ? 'var(--accent)' : 'transparent' };color:${ 'abiertos' === lotsRange ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Con stock</button>
@@ -422,7 +492,7 @@ export function renderAnalitica( main, ctx ) {
 
 				<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;background:var(--input-bg);border-radius:10px;padding:16px;margin:14px 0">
 					<div>
-						<div style="font-size:11px;color:var(--text-muted)">Invertido (${ list.length } ${ 1 === list.length ? 'lote' : 'lotes' })</div>
+						<div style="font-size:11px;color:var(--text-muted)">Invertido (${ list.length } ${ 1 === list.length ? 'carga' : 'cargas' })</div>
 						<div style="font-size:16px;font-weight:800">${ money( totals.invested ) }</div>
 					</div>
 					<div>
@@ -439,13 +509,40 @@ export function renderAnalitica( main, ctx ) {
 					</div>
 				</div>
 
-				<div style="display:flex;flex-direction:column;gap:14px">
+				<div style="display:flex;flex-direction:column;gap:10px">
 					${
 						0 === list.length
-							? '<div style="font-size:13px;color:var(--text-muted)">No hay lotes en este filtro.</div>'
-							: list.map( lotRowHtml ).join( '' )
+							? '<div style="font-size:13px;color:var(--text-muted)">No hay cargas en este filtro.</div>'
+							: list.map( purchaseRowHtml ).join( '' )
 					}
 				</div>
+			</div>
+		`;
+	}
+
+	function purchaseRowHtml( p ) {
+		const isSelected = p.id === selectedPurchaseId;
+		return `
+			<div>
+				<div class="lot-purchase-row" data-purchase-id="${ escAttr( p.id ) }" style="border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;background:${ isSelected ? 'var(--input-bg)' : 'transparent' }">
+					<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap">
+						<div style="font-size:13px;font-weight:700">${ esc( p.label ) } <span style="font-weight:400;color:var(--text-muted)">· ${ p.itemCount } ${ 1 === p.itemCount ? 'artículo' : 'artículos' }</span></div>
+						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">${ formatLotDate( p.createdAt ) }</div>
+					</div>
+					<div style="background:var(--input-bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:6px;display:flex">
+						<div style="width:${ p.recoveredPct }%;height:100%;background:oklch(0.72 0.16 152)"></div>
+						<div style="width:${ p.pendingPct }%;height:100%;background:oklch(0.75 0.16 95)"></div>
+					</div>
+					<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted)">
+						<span>Recuperado ${ money( p.recovered ) }${ p.pending > 0 ? ` · Por cobrar ${ money( p.pending ) }` : '' } de ${ money( p.invested ) }</span>
+						<span style="font-weight:700;color:oklch(0.72 0.16 152)">${ p.recoveredPctLabel }%</span>
+					</div>
+				</div>
+				${
+					isSelected
+						? `<div style="display:flex;flex-direction:column;gap:8px;padding:10px 0 0 14px;margin-left:6px;border-left:2px solid var(--border)">${ p.lots.map( lotRowHtml ).join( '' ) }</div>`
+						: ''
+				}
 			</div>
 		`;
 	}
@@ -455,7 +552,7 @@ export function renderAnalitica( main, ctx ) {
 			<div style="border:1px solid var(--border);border-radius:10px;padding:12px">
 				<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap">
 					<div style="font-size:13px;font-weight:600">${ esc( l.name ) }${ l.size ? ' · ' + esc( l.size ) : '' }${ l.color ? ' · ' + esc( l.color ) : '' }</div>
-					<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">${ formatLotDate( l.createdAt ) } · ${ l.quantity } uds a ${ money( l.unitCost ) } · quedan ${ l.remaining }</div>
+					<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">${ l.quantity } uds a ${ money( l.unitCost ) } · quedan ${ l.remaining }</div>
 				</div>
 				<div style="background:var(--input-bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:6px;display:flex">
 					<div style="width:${ l.recoveredPct }%;height:100%;background:oklch(0.72 0.16 152)"></div>
