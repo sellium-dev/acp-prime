@@ -110,6 +110,10 @@ que ya existe.
   la venta original — así una pre-venta de agosto que se anula en
   septiembre cuenta en septiembre, no en agosto. Ventas muestra "Anulada
   el ..." con esa fecha en cada venta anulada.
+- **`012_revertir_a_pre_venta.sql`**: `revert_sale_to_pre_venta(sale_id)`
+  pasa una venta de Pagado de vuelta a Pre-venta (ej. si se marcó pagada
+  por error) — no toca el stock. Botón "Marcar como pre-venta" en Ventas,
+  visible solo en ventas Pagado, con confirmación antes de aplicarlo.
 
 ## Variables de entorno del frontend
 

@@ -208,6 +208,7 @@ export function renderVentas( main, ctx ) {
 						const status = SALE_STATUS[ s.status ] || SALE_STATUS.pagado;
 						const pending = 'pre_venta' === s.status || 'credito' === s.status;
 						const voidable = 'anulado' !== s.status;
+						const revertible = 'pagado' === s.status;
 						return `
 					<div style="padding:12px 18px;border-bottom:1px solid var(--border)">
 						<div style="display:grid;grid-template-columns:${ cols };gap:12px;font-size:13px;align-items:center">
@@ -219,10 +220,11 @@ export function renderVentas( main, ctx ) {
 							<div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${ status.color.replace( ')', ' / 0.15)' ) };color:${ status.color };width:fit-content">${ status.label }</div>
 						</div>
 						${
-							pending || voidable
+							pending || voidable || revertible
 								? `
 							<div style="display:flex;gap:8px;margin-top:10px">
 								${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }">Marcar pagado</button>` : '' }
+								${ revertible ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-revert-pre-venta="${ s.id }">Marcar como pre-venta</button>` : '' }
 								${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }">Anular</button>` : '' }
 							</div>
 						`
@@ -291,6 +293,9 @@ export function renderVentas( main, ctx ) {
 
 		main.querySelectorAll( '[data-mark-paid]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => handleMarkPaid( btn.dataset.markPaid ) );
+		} );
+		main.querySelectorAll( '[data-revert-pre-venta]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleRevertToPreVenta( btn.dataset.revertPreVenta ) );
 		} );
 		main.querySelectorAll( '[data-void]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => handleVoidSale( btn.dataset.void ) );
@@ -393,6 +398,22 @@ export function renderVentas( main, ctx ) {
 			return;
 		}
 		successMsg = 'Venta marcada como pagada.';
+		await loadSales();
+		draw();
+	}
+
+	async function handleRevertToPreVenta( saleId ) {
+		if ( ! window.confirm( 'Esto pasa la venta de Pagado a Pre-venta — dejará de contar en las ventas del mes hasta que se vuelva a marcar como pagada. ¿Confirmas?' ) ) return;
+
+		errorMsg = '';
+		successMsg = '';
+		const { error } = await supabase.rpc( 'revert_sale_to_pre_venta', { p_sale_id: saleId } );
+		if ( error ) {
+			errorMsg = 'No se pudo pasar a pre-venta: ' + error.message;
+			draw();
+			return;
+		}
+		successMsg = 'Venta marcada como pre-venta.';
 		await loadSales();
 		draw();
 	}
