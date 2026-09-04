@@ -93,7 +93,9 @@ export function renderVentas( main, ctx ) {
 
 		let salesQuery = supabase
 			.from( 'sales' )
-			.select( 'id, customer_name, total_amount, created_at, vendor_id, status, voided_at, sale_items ( quantity )' )
+			.select(
+				'id, customer_name, total_amount, created_at, vendor_id, status, voided_at, sale_items ( quantity, product_variants ( size, color, products ( name ) ) )'
+			)
 			.eq( 'organization_id', org.id )
 			.order( 'created_at', { ascending: false } );
 		if ( 'todos' !== range ) {
@@ -237,6 +239,18 @@ export function renderVentas( main, ctx ) {
 		`;
 	}
 
+	function saleItemsSummary( s ) {
+		return s.sale_items
+			.map( ( it ) => {
+				const name = it.product_variants?.products?.name || 'Producto';
+				const size = it.product_variants?.size;
+				const color = it.product_variants?.color;
+				const detail = [ size, color ].filter( Boolean ).join( ' · ' );
+				return `${ esc( name ) }${ detail ? ' (' + esc( detail ) + ')' : '' } ×${ it.quantity }`;
+			} )
+			.join( ', ' );
+	}
+
 	function salesTableHtml( rows ) {
 		const cols = 'minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.6fr) minmax(0,0.8fr) minmax(0,0.9fr)';
 		return `
@@ -260,6 +274,7 @@ export function renderVentas( main, ctx ) {
 							<div style="font-weight:700">${ money( s.total_amount ) }</div>
 							<div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${ status.color.replace( ')', ' / 0.15)' ) };color:${ status.color };width:fit-content">${ status.label }</div>
 						</div>
+						<div style="font-size:12px;color:var(--text-muted);margin-top:6px">${ saleItemsSummary( s ) }</div>
 						${
 							pending || voidable || revertible
 								? `
