@@ -532,7 +532,7 @@ export function renderAnalitica( main, ctx ) {
 			<div>
 				<div class="lot-purchase-row" data-purchase-id="${ escAttr( p.id ) }" style="border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;background:${ isSelected ? 'var(--input-bg)' : 'transparent' }">
 					<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap">
-						<div style="font-size:13px;font-weight:700">${ esc( p.label ) } <span style="font-weight:400;color:var(--text-muted)">· ${ p.productCount } ${ 1 === p.productCount ? 'producto' : 'productos' } · ${ p.totalStock } en stock</span></div>
+						<div style="font-size:13px;font-weight:700">${ esc( p.label ) } <span style="font-weight:400;color:var(--text-muted)">· ${ p.productCount } ${ 1 === p.productCount ? 'producto' : 'productos' } · ${ p.totalStock } en stock · Inversión ${ money( p.invested ) } · Vendido ${ money( p.recovered ) }</span></div>
 						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">Creada ${ formatLotDate( p.createdAt ) }</div>
 					</div>
 					<div style="background:var(--input-bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:6px;display:flex">
