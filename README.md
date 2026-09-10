@@ -137,6 +137,10 @@ que ya existe.
   numeradas por fecha real, listadas de más cerca del 100% recuperado a
   menos) y, al hacer clic, despliega el detalle de cada producto/talla que
   trajo esa compra.
+- **`015_fecha_lote1_correcta.sql`**: corrige la fecha del "Lote 1" — la
+  `013` la fechó "viernes 28 de octubre", pero esa fecha cae miércoles; el
+  28 de agosto sí cae viernes, así que el mes correcto era agosto. Ajusta
+  `stock_purchases.created_at` y `stock_lots.created_at` de esa carga.
 
 ## Variables de entorno del frontend
 
