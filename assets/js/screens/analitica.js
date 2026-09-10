@@ -173,11 +173,12 @@ export function renderAnalitica( main, ctx ) {
 				id: p.id,
 				label: p.label,
 				createdAt: p.createdAt,
-				// itemCount cuenta variantes (talla/color), no productos — un
-				// producto con 10 tallas suma 10 acá. productCount es la
-				// cantidad de productos distintos, para no confundir ambas cosas.
-				itemCount: p.lots.length,
+				// productCount es la cantidad de productos distintos y
+				// totalStock la suma de unidades (quantity) de todos los lotes —
+				// dos cosas separadas para no confundir "cuántos productos" con
+				// "cuántas unidades".
 				productCount: new Set( p.lots.map( ( l ) => l.productId ) ).size,
+				totalStock: p.lots.reduce( ( sum, l ) => sum + l.quantity, 0 ),
 				hasStock: p.lots.some( ( l ) => l.remaining > 0 ),
 				lots: [ ...p.lots ].sort( ( a, b ) => b.combinedPct - a.combinedPct ),
 				invested,
@@ -531,7 +532,7 @@ export function renderAnalitica( main, ctx ) {
 			<div>
 				<div class="lot-purchase-row" data-purchase-id="${ escAttr( p.id ) }" style="border:1px solid var(--border);border-radius:10px;padding:12px;cursor:pointer;background:${ isSelected ? 'var(--input-bg)' : 'transparent' }">
 					<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;flex-wrap:wrap">
-						<div style="font-size:13px;font-weight:700">${ esc( p.label ) } <span style="font-weight:400;color:var(--text-muted)">· ${ p.productCount } ${ 1 === p.productCount ? 'producto' : 'productos' } · ${ p.itemCount } ${ 1 === p.itemCount ? 'variante' : 'variantes' }</span></div>
+						<div style="font-size:13px;font-weight:700">${ esc( p.label ) } <span style="font-weight:400;color:var(--text-muted)">· ${ p.productCount } ${ 1 === p.productCount ? 'producto' : 'productos' } · ${ p.totalStock } en stock</span></div>
 						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">Creada ${ formatLotDate( p.createdAt ) }</div>
 					</div>
 					<div style="background:var(--input-bg);border-radius:20px;height:10px;overflow:hidden;margin-bottom:6px;display:flex">
