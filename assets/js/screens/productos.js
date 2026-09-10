@@ -59,8 +59,10 @@ export function renderProductos( main, ctx ) {
 	let formDescription = '';
 	let formLowStock = 1;
 	let formVariants = [];
+	let formPurchaseChoice = ''; // '' = crear una carga nueva; si no, id de una carga existente
 	let restockProduct = null;
 	let restockRows = [];
+	let cargaOptions = []; // cargas existentes ({ id, label, createdAt }) a las que se puede sumar stock nuevo
 	let saving = false;
 	let errorMsg = '';
 
@@ -68,18 +70,48 @@ export function renderProductos( main, ctx ) {
 
 	async function load() {
 		main.innerHTML = loadingHtml();
-		const { data, error } = await supabase
-			.from( 'products' )
-			.select( 'id, name, category, description, active, low_stock_threshold, product_variants ( id, size, color, sku, price, cost, stock_quantity )' )
-			.eq( 'organization_id', org.id )
-			.order( 'created_at', { ascending: false } );
+		const [ productsRes, cargaOpts ] = await Promise.all( [
+			supabase
+				.from( 'products' )
+				.select( 'id, name, category, description, active, low_stock_threshold, product_variants ( id, size, color, sku, price, cost, stock_quantity )' )
+				.eq( 'organization_id', org.id )
+				.order( 'created_at', { ascending: false } ),
+			loadCargaOptions(),
+		] );
 
-		if ( error ) {
-			main.innerHTML = `<div class="acp-error">No se pudo cargar productos: ${ esc( error.message ) }</div>`;
+		if ( productsRes.error ) {
+			main.innerHTML = `<div class="acp-error">No se pudo cargar productos: ${ esc( productsRes.error.message ) }</div>`;
 			return;
 		}
-		products = data || [];
+		products = productsRes.data || [];
+		cargaOptions = cargaOpts;
 		draw();
+	}
+
+	// Misma agrupación/numeración de "Carga N" que usa Analítica (por
+	// purchase_id, cronológico) — así "Carga 1" acá es la misma Carga 1 que
+	// se ve allá. Los lotes sueltos de antes de la migración 014 (sin
+	// purchase_id) cuentan para la numeración pero no se pueden elegir como
+	// destino, porque no tienen una carga real a la que sumarles algo.
+	async function loadCargaOptions() {
+		const { data, error } = await supabase
+			.from( 'stock_lots' )
+			.select( 'id, purchase_id, created_at, stock_purchases ( created_at )' )
+			.eq( 'organization_id', org.id );
+		if ( error ) return [];
+
+		const groups = new Map();
+		( data || [] ).forEach( ( l ) => {
+			const key = l.purchase_id || `lote-${ l.id }`;
+			if ( ! groups.has( key ) ) {
+				groups.set( key, { purchaseId: l.purchase_id, createdAt: l.stock_purchases?.created_at || l.created_at } );
+			}
+		} );
+
+		return Array.from( groups.values() )
+			.sort( ( a, b ) => new Date( a.createdAt ) - new Date( b.createdAt ) )
+			.map( ( p, i ) => ( { id: p.purchaseId, label: `Carga ${ i + 1 }`, createdAt: p.createdAt } ) )
+			.filter( ( p ) => null !== p.id );
 	}
 
 	function draw() {
@@ -220,6 +252,7 @@ export function renderProductos( main, ctx ) {
 		formVariants = product
 			? sortVariantsBySize( product.product_variants ).map( ( v ) => ( { ...v } ) )
 			: [ emptyVariant() ];
+		formPurchaseChoice = '';
 		errorMsg = '';
 		view = 'form';
 		draw();
@@ -234,6 +267,7 @@ export function renderProductos( main, ctx ) {
 		formCategory = document.getElementById( 'p-category' ).value;
 		formDescription = document.getElementById( 'p-description' ).value;
 		formLowStock = document.getElementById( 'p-low-stock' ).value;
+		formPurchaseChoice = document.getElementById( 'p-carga-choice' ).value;
 	}
 
 	function emptyVariant() {
@@ -242,24 +276,6 @@ export function renderProductos( main, ctx ) {
 
 	async function openRestock( product ) {
 		restockProduct = product;
-		const variantIds = ( product.product_variants || [] ).map( ( v ) => v.id );
-
-		// El lote más reciente de cada variante — para poder ofrecer "es el
-		// mismo lote que la última reposición" en vez de crear uno nuevo.
-		const latestLotByVariant = new Map();
-		if ( variantIds.length > 0 ) {
-			const { data: lots } = await supabase
-				.from( 'stock_lots' )
-				.select( 'id, product_variant_id, quantity, remaining_quantity, unit_cost, created_at' )
-				.in( 'product_variant_id', variantIds )
-				.order( 'created_at', { ascending: false } );
-			( lots || [] ).forEach( ( lot ) => {
-				if ( ! latestLotByVariant.has( lot.product_variant_id ) ) {
-					latestLotByVariant.set( lot.product_variant_id, lot );
-				}
-			} );
-		}
-
 		restockRows = sortVariantsBySize( product.product_variants || [] ).map( ( v ) => ( {
 			id: v.id,
 			size: v.size,
@@ -267,7 +283,6 @@ export function renderProductos( main, ctx ) {
 			stock_quantity: v.stock_quantity,
 			cost: v.cost,
 			price: v.price,
-			latestLot: latestLotByVariant.get( v.id ) || null,
 		} ) );
 		errorMsg = '';
 		view = 'restock';
@@ -301,16 +316,15 @@ export function renderProductos( main, ctx ) {
 								<input placeholder="Costo" class="r-cost" type="number" step="0.01" value="${ escAttr( r.cost ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 								<input placeholder="Precio" class="r-price" type="number" step="0.01" value="${ escAttr( r.price ) }" style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 10px;color:var(--text);font-size:13px;font-family:inherit" />
 							</div>
-							${
-								r.latestLot
-									? `
-								<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);cursor:pointer;margin-top:8px">
-									<input type="checkbox" class="r-same-lot" style="margin:0" />
-									Es el mismo lote que la última reposición (${ formatLotDate( r.latestLot.created_at ) }, costo ${ money( r.latestLot.unit_cost ) })
-								</label>
-							`
-									: '<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Este será su primer lote registrado.</div>'
-							}
+							<div class="acp-field" style="margin-top:8px;margin-bottom:0">
+								<label style="font-size:11px">Esta cantidad pertenece a</label>
+								<select class="r-carga-choice" style="padding:8px 10px;font-size:12px">
+									<option value="">Carga nueva</option>
+									${ cargaOptions
+										.map( ( c ) => `<option value="${ escAttr( c.id ) }">${ esc( c.label ) } · ${ formatLotDate( c.createdAt ) }</option>` )
+										.join( '' ) }
+								</select>
+							</div>
 							<div class="r-hint" style="font-size:12px;color:var(--text-muted);margin-top:6px"></div>
 						</div>
 					`
@@ -411,15 +425,13 @@ export function renderProductos( main, ctx ) {
 			const baseCost = parseFloat( row.querySelector( '.r-cost' ).value ) || 0;
 			const cost = Math.round( ( baseCost + perUnit ) * 100 ) / 100;
 			const price = parseFloat( row.querySelector( '.r-price' ).value ) || 0;
-			const sameLotCheckbox = row.querySelector( '.r-same-lot' );
 			updates.push( {
 				variantId: restockRows[ i ].id,
 				stock_quantity: restockRows[ i ].stock_quantity + addQty,
 				cost,
 				price,
 				addQty,
-				latestLot: restockRows[ i ].latestLot,
-				sameLot: !! ( sameLotCheckbox && sameLotCheckbox.checked ),
+				purchaseChoice: row.querySelector( '.r-carga-choice' ).value,
 			} );
 		} );
 
@@ -433,11 +445,10 @@ export function renderProductos( main, ctx ) {
 		draw();
 
 		try {
-			// Todas las variantes que se guarden en esta misma reposición
-			// pertenecen a la misma carga, aunque sean productos distintos —
-			// la carga se crea la primera vez que hace falta (si todas las
-			// filas se fusionan con "mismo lote", nunca se crea ninguna).
-			let purchaseId = null;
+			// Cada fila que elige "Carga nueva" comparte una sola carga creada
+			// para este guardado (aunque sean productos distintos); las que
+			// eligen una carga existente se suman directo a esa.
+			let newPurchaseId = null;
 			for ( const u of updates ) {
 				const { error } = await supabase
 					.from( 'product_variants' )
@@ -445,43 +456,28 @@ export function renderProductos( main, ctx ) {
 					.eq( 'id', u.variantId );
 				if ( error ) throw error;
 
-				if ( u.sameLot && u.latestLot ) {
-					// Se funde con el lote más reciente: el costo queda como
-					// promedio ponderado entre lo que quedaba de ese lote y lo
-					// que entra ahora — no se toca created_at (sigue siendo el
-					// más antiguo para efectos de FIFO).
-					const lot = u.latestLot;
-					const newRemaining = lot.remaining_quantity + u.addQty;
-					const newQuantity = lot.quantity + u.addQty;
-					const newUnitCost =
-						newRemaining > 0
-							? Math.round( ( ( lot.remaining_quantity * lot.unit_cost + u.addQty * u.cost ) / newRemaining ) * 100 ) / 100
-							: u.cost;
-					const { error: lotError } = await supabase
-						.from( 'stock_lots' )
-						.update( { quantity: newQuantity, remaining_quantity: newRemaining, unit_cost: newUnitCost } )
-						.eq( 'id', lot.id );
-					if ( lotError ) throw lotError;
-				} else {
-					if ( ! purchaseId ) {
+				let purchaseId = u.purchaseChoice || null;
+				if ( ! purchaseId ) {
+					if ( ! newPurchaseId ) {
 						const { data: purchase, error: purchaseError } = await supabase
 							.from( 'stock_purchases' )
 							.insert( { organization_id: org.id } )
 							.select( 'id' )
 							.single();
 						if ( purchaseError ) throw purchaseError;
-						purchaseId = purchase.id;
+						newPurchaseId = purchase.id;
 					}
-					const { error: lotError } = await supabase.from( 'stock_lots' ).insert( {
-						organization_id: org.id,
-						product_variant_id: u.variantId,
-						quantity: u.addQty,
-						remaining_quantity: u.addQty,
-						unit_cost: u.cost,
-						purchase_id: purchaseId,
-					} );
-					if ( lotError ) throw lotError;
+					purchaseId = newPurchaseId;
 				}
+				const { error: lotError } = await supabase.from( 'stock_lots' ).insert( {
+					organization_id: org.id,
+					product_variant_id: u.variantId,
+					quantity: u.addQty,
+					remaining_quantity: u.addQty,
+					unit_cost: u.cost,
+					purchase_id: purchaseId,
+				} );
+				if ( lotError ) throw lotError;
 			}
 			saving = false;
 			view = 'list';
@@ -520,6 +516,19 @@ export function renderProductos( main, ctx ) {
 				</div>
 
 				<div style="font-size:13px;font-weight:700;margin:20px 0 10px">Variantes (talla o modelo / color)</div>
+
+				<div class="acp-field" style="max-width:320px">
+					<label>El stock de las variantes nuevas pertenece a</label>
+					<select id="p-carga-choice">
+						<option value="" ${ '' === formPurchaseChoice ? 'selected' : '' }>Carga nueva</option>
+						${ cargaOptions
+							.map(
+								( c ) => `<option value="${ escAttr( c.id ) }" ${ c.id === formPurchaseChoice ? 'selected' : '' }>${ esc( c.label ) } · ${ formatLotDate( c.createdAt ) }</option>`
+							)
+							.join( '' ) }
+					</select>
+					<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Si esto es parte de una compra que ya registraste, elige esa carga en vez de crear una nueva.</div>
+				</div>
 
 				<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px;margin-bottom:12px" id="p-shipping-toggle">+ Agregar costo de envío</button>
 				<div id="p-shipping-box" style="display:none;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;max-width:360px">
@@ -951,14 +960,21 @@ export function renderProductos( main, ctx ) {
 						unit_cost: v.cost,
 					} ) );
 				if ( newLots.length > 0 ) {
-					const { data: purchase, error: purchaseError } = await supabase
-						.from( 'stock_purchases' )
-						.insert( { organization_id: org.id } )
-						.select( 'id' )
-						.single();
-					if ( purchaseError ) throw purchaseError;
+					// Si se eligió una carga existente, el stock nuevo se suma a
+					// esa — si no ("Carga nueva"), se crea una carga propia para
+					// este guardado, igual que antes.
+					let purchaseId = formPurchaseChoice || null;
+					if ( ! purchaseId ) {
+						const { data: purchase, error: purchaseError } = await supabase
+							.from( 'stock_purchases' )
+							.insert( { organization_id: org.id } )
+							.select( 'id' )
+							.single();
+						if ( purchaseError ) throw purchaseError;
+						purchaseId = purchase.id;
+					}
 					newLots.forEach( ( lot ) => {
-						lot.purchase_id = purchase.id;
+						lot.purchase_id = purchaseId;
 					} );
 					const { error: lotError } = await supabase.from( 'stock_lots' ).insert( newLots );
 					if ( lotError ) throw lotError;
@@ -984,8 +1000,13 @@ function money( n ) {
 	return '$' + Number( n ).toLocaleString( 'es-CL', { maximumFractionDigits: 0 } );
 }
 
+// Formateada a mano (no toLocaleDateString): esa función depende del soporte
+// de locale del navegador y a veces sale ambigua y sin año (ej. "9/9").
 function formatLotDate( isoString ) {
-	return new Date( isoString ).toLocaleDateString( 'es-CL', { day: '2-digit', month: '2-digit' } );
+	const d = new Date( isoString );
+	const dd = String( d.getDate() ).padStart( 2, '0' );
+	const mm = String( d.getMonth() + 1 ).padStart( 2, '0' );
+	return `${ dd }-${ mm }-${ d.getFullYear() }`;
 }
 
 function esc( str ) {
