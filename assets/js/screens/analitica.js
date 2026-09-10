@@ -500,6 +500,7 @@ export function renderAnalitica( main, ctx ) {
 					<div>
 						<div style="font-size:11px;color:var(--text-muted)">Invertido (${ list.length } ${ 1 === list.length ? 'carga' : 'cargas' })</div>
 						<div style="font-size:16px;font-weight:800">${ money( totals.invested ) }</div>
+						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:6px">Plata gastada comprando stock, incluye lo ya vendido — no es el valor de tu bodega hoy, eso se ve en el Dashboard</div>
 					</div>
 					<div>
 						<div style="font-size:11px;color:var(--text-muted)">Recuperado (Pagado)</div>
