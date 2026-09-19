@@ -49,6 +49,7 @@ export function renderVentas( main, ctx ) {
 	let variants = [];
 	let search = '';
 	let cart = []; // { variantId, name, size, color, price, stock, qty }
+	let customerName = ''; // cliente de la venta que se está armando
 	let saleStatus = 'pagado'; // estado con el que se registra la próxima venta
 	let saving = false;
 	let errorMsg = '';
@@ -147,7 +148,7 @@ export function renderVentas( main, ctx ) {
 					}
 					<div class="acp-field">
 						<label>Cliente (opcional)</label>
-						<input id="v-customer" placeholder="Nombre del cliente" style="padding:10px 12px" />
+						<input id="v-customer" placeholder="Nombre del cliente" value="${ escAttr( customerName ) }" style="padding:10px 12px" />
 					</div>
 					<div class="acp-field">
 						<label>Estado</label>
@@ -379,6 +380,16 @@ export function renderVentas( main, ctx ) {
 			submitBtn.addEventListener( 'click', handleSubmit );
 		}
 
+		// Sin esto, cambiar el estado (o cualquier otra cosa que dispare un
+		// draw(), como +/- cantidad) reconstruye el formulario desde cero y
+		// el campo de cliente vuelve a nacer vacío, borrando lo ya tecleado.
+		const customerInput = document.getElementById( 'v-customer' );
+		if ( customerInput ) {
+			customerInput.addEventListener( 'input', () => {
+				customerName = customerInput.value;
+			} );
+		}
+
 		const statusSelect = document.getElementById( 'v-status' );
 		if ( statusSelect ) {
 			statusSelect.addEventListener( 'change', () => {
@@ -461,11 +472,6 @@ export function renderVentas( main, ctx ) {
 	async function handleSubmit() {
 		if ( 0 === cart.length ) return;
 
-		// Hay que leer el input ANTES de volver a dibujar — draw() reconstruye
-		// el campo de Cliente desde cero (sin recordar lo tecleado), así que
-		// si se lee después, siempre llega vacío.
-		const customerName = document.getElementById( 'v-customer' )?.value.trim() || '';
-
 		if ( cart.some( ( c ) => ! Number.isFinite( c.price ) || c.price < 0 ) ) {
 			errorMsg = 'El precio de cada producto debe ser un número igual o mayor a 0.';
 			draw();
@@ -481,7 +487,7 @@ export function renderVentas( main, ctx ) {
 
 		const { error } = await supabase.rpc( 'register_sale', {
 			p_organization_id: org.id,
-			p_customer_name: customerName,
+			p_customer_name: customerName.trim(),
 			p_items: items,
 			p_status: saleStatus,
 		} );
@@ -495,6 +501,7 @@ export function renderVentas( main, ctx ) {
 		}
 
 		cart = [];
+		customerName = '';
 		saleStatus = 'pagado';
 		successMsg = 'Venta registrada.';
 		await Promise.all( [ loadVariants(), loadSales() ] );
