@@ -398,6 +398,7 @@ export function renderVentasResumen( main, ctx ) {
 						( it ) => `
 					<div style="display:flex;align-items:center;gap:10px;font-size:12px">
 						<div style="flex:1;min-width:0;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( it.name ) }${ it.detail ? ' · ' + esc( it.detail ) : '' } ×${ it.qty }</div>
+						<div style="width:110px;flex:0 0 auto;color:var(--text-faint2, var(--text-muted));white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( it.customerName ) }</div>
 						<div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:${ STATUS_META[ it.status ].color.replace( ')', ' / 0.15)' ) };color:${ STATUS_META[ it.status ].color };flex:0 0 auto">${ STATUS_META[ it.status ].label }</div>
 						<div style="font-weight:700;flex:0 0 auto">${ money( it.price * it.qty ) }</div>
 					</div>
