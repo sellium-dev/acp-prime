@@ -249,6 +249,10 @@ export function renderVentasResumen( main, ctx ) {
 					)
 					.join( '' ) }
 			</div>
+			<div style="background:var(--input-bg);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+				<div style="font-size:13px;color:var(--text-muted)">Ingresos posibles del período — Pagado + Pre-venta + Crédito, si todo termina cobrándose</div>
+				<div style="font-size:18px;font-weight:800">${ money( stats.byStatus.pagado.value + stats.byStatus.pre_venta.value + stats.byStatus.credito.value ) }</div>
+			</div>
 		`;
 	}
 
