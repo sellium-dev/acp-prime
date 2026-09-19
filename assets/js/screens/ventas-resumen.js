@@ -13,7 +13,9 @@ export function renderVentasResumen( main, ctx ) {
 	let sales = [];
 	let memberNames = new Map();
 	let cargaLabelByLotId = new Map();
-	let showArticleDetail = false;
+	// null = cerrado; 'all' = "Artículos vendidos"; 'pagado'/'pre_venta'/'credito' = esa tarjeta
+	let statusDetailFilter = null;
+	let expandedVendorId = null; // vendedor con el detalle de lo que vendió desplegado
 	let errorMsg = '';
 	let loading = true;
 
@@ -107,11 +109,14 @@ export function renderVentasResumen( main, ctx ) {
 
 			const vendorKey = s.vendor_id;
 			const vendorEntry = byVendor.get( vendorKey ) || {
+				id: vendorKey,
 				name: memberNames.get( vendorKey ) || 'Sin nombre',
 				salesCount: 0,
 				units: 0,
 				revenue: 0,
 				profit: 0,
+				pending: 0, // Pre-venta + Crédito de este vendedor, no cuenta como Ganancia todavía
+				items: [],
 			};
 			vendorEntry.salesCount += 1;
 
@@ -124,6 +129,8 @@ export function renderVentasResumen( main, ctx ) {
 				if ( 'pagado' === s.status ) {
 					vendorEntry.revenue += it.unit_price * it.quantity;
 					vendorEntry.profit += ( it.unit_price - it.unit_cost ) * it.quantity;
+				} else {
+					vendorEntry.pending += it.unit_price * it.quantity;
 				}
 
 				const name = it.product_variants?.products?.name || 'Producto';
@@ -131,7 +138,7 @@ export function renderVentasResumen( main, ctx ) {
 				const color = it.product_variants?.color;
 				const detail = [ size, color ].filter( Boolean ).join( ' · ' );
 
-				items.push( {
+				const itemRow = {
 					id: it.id,
 					name,
 					detail,
@@ -141,8 +148,11 @@ export function renderVentasResumen( main, ctx ) {
 					profit: it.unit_price - it.unit_cost,
 					carga: cargaLabelByLotId.get( it.stock_lot_id ) || '—',
 					customerName: customerKey,
+					vendorId: vendorKey,
 					status: s.status,
-				} );
+				};
+				items.push( itemRow );
+				vendorEntry.items.push( itemRow );
 
 				customerEntry.items.push( { name, detail, qty: it.quantity } );
 				customerEntry.total += it.unit_price * it.quantity;
@@ -190,7 +200,7 @@ export function renderVentasResumen( main, ctx ) {
 						? '<div class="acp-empty-state">No hay ventas en este período.</div>'
 						: `
 					${ kpiRowHtml( stats ) }
-					${ showArticleDetail ? articleDetailHtml( stats.items ) : '' }
+					${ statusDetailFilter ? statusDetailSectionHtml( stats.items ) : '' }
 					${ pieSectionHtml( stats.byStatus ) }
 					${ extraMetricsHtml( stats ) }
 					${ customersHtml( stats.customerRows ) }
@@ -232,18 +242,18 @@ export function renderVentasResumen( main, ctx ) {
 	function kpiRowHtml( stats ) {
 		return `
 			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px">
-				<div class="acp-kpi-card" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;cursor:pointer" id="vr-toggle-articles">
+				<div class="acp-kpi-card" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;cursor:pointer" data-status-card="all">
 					<div style="font-size:12px;color:var(--text-muted);font-weight:600;margin-bottom:8px">Artículos vendidos</div>
 					<div style="font-size:22px;font-weight:800">${ stats.units }</div>
-					<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:4px">${ showArticleDetail ? 'Click para ocultar el detalle' : 'Click para ver el detalle' }</div>
+					<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:4px">${ 'all' === statusDetailFilter ? 'Click para ocultar el detalle' : 'Click para ver el detalle' }</div>
 				</div>
 				${ [ 'pagado', 'pre_venta', 'credito' ]
 					.map(
 						( key ) => `
-					<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px">
+					<div class="acp-kpi-card" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;cursor:pointer" data-status-card="${ key }">
 						<div style="font-size:12px;color:var(--text-muted);font-weight:600;margin-bottom:8px">${ STATUS_META[ key ].label }</div>
 						<div style="font-size:22px;font-weight:800;color:${ STATUS_META[ key ].color }">${ money( stats.byStatus[ key ].value ) }</div>
-						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:4px">${ stats.byStatus[ key ].count } ${ 1 === stats.byStatus[ key ].count ? 'venta' : 'ventas' }</div>
+						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:4px">${ stats.byStatus[ key ].count } ${ 1 === stats.byStatus[ key ].count ? 'venta' : 'ventas' } · ${ key === statusDetailFilter ? 'ocultar' : 'ver' } detalle</div>
 					</div>
 				`
 					)
@@ -256,12 +266,23 @@ export function renderVentasResumen( main, ctx ) {
 		`;
 	}
 
-	function articleDetailHtml( items ) {
+	function statusDetailSectionHtml( items ) {
+		const filtered = 'all' === statusDetailFilter ? items : items.filter( ( it ) => it.status === statusDetailFilter );
+		const title = 'all' === statusDetailFilter ? 'Detalle por artículo — todos' : `Detalle por artículo — ${ STATUS_META[ statusDetailFilter ].label }`;
+		return articleDetailHtml( filtered, title );
+	}
+
+	function articleDetailHtml( items, title ) {
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:20px">
-				<div style="font-size:15px;font-weight:700;margin-bottom:4px">Detalle por artículo</div>
+				<div style="font-size:15px;font-weight:700;margin-bottom:4px">${ esc( title || 'Detalle por artículo' ) }</div>
 				<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-bottom:14px">Costo y ganancia son por unidad — la ganancia ya descuenta el costo (precio − costo)</div>
 				<div style="display:flex;flex-direction:column;gap:8px">
+					${
+						0 === items.length
+							? '<div style="font-size:13px;color:var(--text-muted)">Sin artículos en este filtro.</div>'
+							: ''
+					}
 					${ items
 						.map(
 							( it ) => `
@@ -352,26 +373,51 @@ export function renderVentasResumen( main, ctx ) {
 		`;
 	}
 
+	function vendorRowHtml( v ) {
+		const isExpanded = v.id === expandedVendorId;
+		return `
+			<div>
+				<div class="vr-vendor-row" data-vendor-row="${ escAttr( v.id ) }" style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;background:${ isExpanded ? 'var(--input-bg)' : 'transparent' }">
+					<div style="flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( v.name ) }</div>
+					<div style="font-size:11px;color:var(--text-muted)">${ v.salesCount } ${ 1 === v.salesCount ? 'venta' : 'ventas' } · ${ v.units } uds</div>
+					<div style="text-align:right">
+						<div style="font-size:13px;font-weight:700">${ money( v.revenue ) }</div>
+						${ v.pending > 0 ? `<div style="font-size:10px;color:var(--text-faint2, var(--text-muted))">+ ${ money( v.pending ) } por cobrar</div>` : '' }
+					</div>
+				</div>
+				${ isExpanded ? vendorItemsHtml( v ) : '' }
+			</div>
+		`;
+	}
+
+	function vendorItemsHtml( v ) {
+		return `
+			<div style="display:flex;flex-direction:column;gap:6px;padding:10px 0 4px">
+				${ v.items
+					.map(
+						( it ) => `
+					<div style="display:flex;align-items:center;gap:10px;font-size:12px">
+						<div style="flex:1;min-width:0;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( it.name ) }${ it.detail ? ' · ' + esc( it.detail ) : '' } ×${ it.qty }</div>
+						<div style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:${ STATUS_META[ it.status ].color.replace( ')', ' / 0.15)' ) };color:${ STATUS_META[ it.status ].color };flex:0 0 auto">${ STATUS_META[ it.status ].label }</div>
+						<div style="font-weight:700;flex:0 0 auto">${ money( it.price * it.qty ) }</div>
+					</div>
+				`
+					)
+					.join( '' ) }
+			</div>
+		`;
+	}
+
 	function extraMetricsHtml( stats ) {
 		return `
 			<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:20px">
 				<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px">
 					<div style="font-size:15px;font-weight:700;margin-bottom:4px">Desempeño por vendedor</div>
-					<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-bottom:14px">Ganancia solo cuenta ventas Pagado, igual que en el Dashboard</div>
+					<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-bottom:14px">El monto solo cuenta ventas Pagado (igual que "Ganancia" en el Dashboard) — click en un vendedor para ver qué vendió</div>
 					${
 						0 === stats.vendorRows.length
 							? '<div style="font-size:13px;color:var(--text-muted)">Sin datos.</div>'
-							: stats.vendorRows
-									.map(
-										( v ) => `
-						<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
-							<div style="flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( v.name ) }</div>
-							<div style="font-size:11px;color:var(--text-muted)">${ v.salesCount } ${ 1 === v.salesCount ? 'venta' : 'ventas' } · ${ v.units } uds</div>
-							<div style="font-size:13px;font-weight:700">${ money( v.revenue ) }</div>
-						</div>
-					`
-									)
-									.join( '' )
+							: stats.vendorRows.map( vendorRowHtml ).join( '' )
 					}
 				</div>
 				<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px">
@@ -438,13 +484,21 @@ export function renderVentasResumen( main, ctx ) {
 			} );
 		}
 
-		const toggleBtn = document.getElementById( 'vr-toggle-articles' );
-		if ( toggleBtn ) {
-			toggleBtn.addEventListener( 'click', () => {
-				showArticleDetail = ! showArticleDetail;
+		main.querySelectorAll( '[data-status-card]' ).forEach( ( card ) => {
+			card.addEventListener( 'click', () => {
+				const key = card.dataset.statusCard;
+				statusDetailFilter = statusDetailFilter === key ? null : key;
 				draw();
 			} );
-		}
+		} );
+
+		main.querySelectorAll( '[data-vendor-row]' ).forEach( ( row ) => {
+			row.addEventListener( 'click', () => {
+				const id = row.dataset.vendorRow;
+				expandedVendorId = expandedVendorId === id ? null : id;
+				draw();
+			} );
+		} );
 	}
 }
 
