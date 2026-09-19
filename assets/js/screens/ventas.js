@@ -45,7 +45,7 @@ function compareByProductThenSize( a, b ) {
 }
 
 export function renderVentas( main, ctx ) {
-	const { supabase, org, membership } = ctx;
+	const { supabase, org, membership, isAdmin } = ctx;
 	let variants = [];
 	let search = '';
 	let cart = []; // { variantId, name, size, color, price, stock, qty }
@@ -55,6 +55,7 @@ export function renderVentas( main, ctx ) {
 	let successMsg = '';
 	let sales = [];
 	let memberNames = new Map();
+	let editingSaleId = null; // venta cuyo cliente/precios se están corrigiendo
 	let range = [ 'mes', 'todos' ].includes( ctx.navParams?.range ) ? ctx.navParams.range : 'hoy';
 	// Acepta un estado solo ("anulado") o varios ("Por cobrar" = pre_venta +
 	// credito) — siempre se normaliza a un array (o null si no aplica).
@@ -94,7 +95,7 @@ export function renderVentas( main, ctx ) {
 		let salesQuery = supabase
 			.from( 'sales' )
 			.select(
-				'id, customer_name, total_amount, created_at, vendor_id, status, voided_at, sale_items ( quantity, product_variants ( size, color, products ( name ) ) )'
+				'id, customer_name, total_amount, created_at, vendor_id, status, voided_at, sale_items ( id, quantity, unit_price, product_variants ( size, color, products ( name ) ) )'
 			)
 			.eq( 'organization_id', org.id )
 			.order( 'created_at', { ascending: false } );
@@ -264,6 +265,7 @@ export function renderVentas( main, ctx ) {
 						const pending = 'pre_venta' === s.status || 'credito' === s.status;
 						const voidable = 'anulado' !== s.status;
 						const revertible = 'pagado' === s.status;
+						const isEditing = editingSaleId === s.id;
 						return `
 					<div style="padding:12px 18px;border-bottom:1px solid var(--border)">
 						<div style="display:grid;grid-template-columns:${ cols };gap:12px;font-size:13px;align-items:center">
@@ -274,27 +276,65 @@ export function renderVentas( main, ctx ) {
 							<div style="font-weight:700">${ money( s.total_amount ) }</div>
 							<div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${ status.color.replace( ')', ' / 0.15)' ) };color:${ status.color };width:fit-content">${ status.label }</div>
 						</div>
-						<div style="font-size:12px;color:var(--text-muted);margin-top:6px">${ saleItemsSummary( s ) }</div>
 						${
-							pending || voidable || revertible
-								? `
-							<div style="display:flex;gap:8px;margin-top:10px">
-								${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }">Marcar pagado</button>` : '' }
-								${ revertible ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-revert-pre-venta="${ s.id }">Marcar como pre-venta</button>` : '' }
-								${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }">Anular</button>` : '' }
-							</div>
+							isEditing
+								? editSaleFormHtml( s )
+								: `
+							<div style="font-size:12px;color:var(--text-muted);margin-top:6px">${ saleItemsSummary( s ) }</div>
+							${
+								pending || voidable || revertible || isAdmin
+									? `
+								<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }">Marcar pagado</button>` : '' }
+									${ revertible ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-revert-pre-venta="${ s.id }">Marcar como pre-venta</button>` : '' }
+									${ isAdmin ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-edit-sale="${ s.id }">Editar venta</button>` : '' }
+									${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }">Anular</button>` : '' }
+								</div>
+							`
+									: ''
+							}
+							${
+								'anulado' === s.status && s.voided_at
+									? `<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Anulada el ${ formatSaleDateTime( s.voided_at ) }</div>`
+									: ''
+							}
 						`
-								: ''
-						}
-						${
-							'anulado' === s.status && s.voided_at
-								? `<div style="font-size:11px;color:var(--text-muted);margin-top:8px">Anulada el ${ formatSaleDateTime( s.voided_at ) }</div>`
-								: ''
 						}
 					</div>
 				`;
 					} )
 					.join( '' ) }
+			</div>
+		`;
+	}
+
+	// Solo cliente y precio por línea son editables — cambiar producto,
+	// talla o cantidad afectaría el stock ya descontado, y eso es un caso
+	// distinto (anular y volver a registrar).
+	function editSaleFormHtml( s ) {
+		return `
+			<div style="margin-top:10px;padding:14px;background:var(--input-bg);border-radius:10px;display:flex;flex-direction:column;gap:10px" data-edit-form="${ s.id }">
+				<div class="acp-field" style="margin-bottom:0">
+					<label>Cliente</label>
+					<input id="es-customer" value="${ escAttr( s.customer_name || '' ) }" placeholder="Nombre del cliente" style="padding:9px 10px" />
+				</div>
+				${ s.sale_items
+					.map( ( it ) => {
+						const name = it.product_variants?.products?.name || 'Producto';
+						const detail = [ it.product_variants?.size, it.product_variants?.color ].filter( Boolean ).join( ' · ' );
+						return `
+					<div style="display:flex;align-items:center;gap:10px">
+						<div style="flex:1;min-width:0;font-size:13px">${ esc( name ) }${ detail ? ' (' + esc( detail ) + ')' : '' } <span style="color:var(--text-muted)">×${ it.quantity }</span></div>
+						<input class="es-item-price" data-item="${ it.id }" type="number" min="0" step="1" value="${ escAttr( it.unit_price ) }"
+							style="width:110px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-size:13px;font-family:inherit" />
+					</div>
+				`;
+					} )
+					.join( '' ) }
+				<div style="display:flex;gap:8px;margin-top:4px">
+					<button type="button" class="acp-btn-primary" style="width:auto;padding:8px 16px;font-size:13px" data-save-sale="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving ? 'Guardando…' : 'Guardar cambios' }</button>
+					<button type="button" class="acp-btn-secondary" style="width:auto;padding:8px 16px;font-size:13px" data-cancel-edit-sale>Cancelar</button>
+				</div>
 			</div>
 		`;
 	}
@@ -355,6 +395,23 @@ export function renderVentas( main, ctx ) {
 		} );
 		main.querySelectorAll( '[data-void]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => handleVoidSale( btn.dataset.void ) );
+		} );
+		main.querySelectorAll( '[data-edit-sale]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				editingSaleId = btn.dataset.editSale;
+				errorMsg = '';
+				successMsg = '';
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '[data-cancel-edit-sale]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				editingSaleId = null;
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '[data-save-sale]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleSaveEditSale( btn.dataset.saveSale ) );
 		} );
 
 		main.querySelectorAll( '.v-range-btn' ).forEach( ( btn ) => {
@@ -488,6 +545,64 @@ export function renderVentas( main, ctx ) {
 		successMsg = 'Venta anulada — el stock fue devuelto.';
 		await Promise.all( [ loadVariants(), loadSales() ] );
 		draw();
+	}
+
+	// El total de la venta (sales.total_amount) es un valor guardado aparte
+	// de las líneas, no algo que la base recalcule sola — si se corrige el
+	// precio de una línea acá y no se actualiza el total, la lista de Ventas
+	// queda mostrando un total viejo aunque Analítica/Dashboard (que suman
+	// directo desde sale_items) ya reflejen el precio corregido.
+	async function handleSaveEditSale( saleId ) {
+		const s = sales.find( ( x ) => x.id === saleId );
+		if ( ! s ) return;
+
+		const customerName = document.getElementById( 'es-customer' )?.value.trim() || '';
+		const priceInputs = document.querySelectorAll( '.es-item-price' );
+		const updates = Array.from( priceInputs ).map( ( input ) => ( {
+			itemId: input.dataset.item,
+			price: parseFloat( input.value ),
+		} ) );
+
+		if ( updates.some( ( u ) => ! Number.isFinite( u.price ) || u.price < 0 ) ) {
+			errorMsg = 'El precio de cada línea debe ser un número igual o mayor a 0.';
+			draw();
+			return;
+		}
+
+		saving = true;
+		errorMsg = '';
+		successMsg = '';
+		draw();
+
+		try {
+			const { error: saleError } = await supabase
+				.from( 'sales' )
+				.update( { customer_name: customerName || null } )
+				.eq( 'id', saleId );
+			if ( saleError ) throw saleError;
+
+			for ( const u of updates ) {
+				const { error } = await supabase.from( 'sale_items' ).update( { unit_price: u.price } ).eq( 'id', u.itemId );
+				if ( error ) throw error;
+			}
+
+			const newTotal = s.sale_items.reduce( ( sum, it ) => {
+				const u = updates.find( ( x ) => x.itemId === it.id );
+				return sum + ( u ? u.price : it.unit_price ) * it.quantity;
+			}, 0 );
+			const { error: totalError } = await supabase.from( 'sales' ).update( { total_amount: newTotal } ).eq( 'id', saleId );
+			if ( totalError ) throw totalError;
+
+			saving = false;
+			editingSaleId = null;
+			successMsg = 'Venta actualizada.';
+			await loadSales();
+			draw();
+		} catch ( err ) {
+			saving = false;
+			errorMsg = 'No se pudo actualizar la venta: ' + err.message;
+			draw();
+		}
 	}
 }
 
