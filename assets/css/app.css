@@ -233,6 +233,12 @@
 	color: var(--accent);
 }
 
+.acp-nav__item--sub {
+	padding-left: 26px;
+	font-size: 13px;
+	font-weight: 500;
+}
+
 .acp-sidebar__spacer {
 	flex: 1;
 }

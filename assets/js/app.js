@@ -6,6 +6,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
 import { renderProductos } from './screens/productos.js?v=18';
 import { renderVentas } from './screens/ventas.js?v=17';
+import { renderVentasResumen } from './screens/ventas-resumen.js?v=1';
 import { renderDashboard } from './screens/dashboard.js?v=15';
 import { renderConfiguracion } from './screens/configuracion.js?v=4';
 import { renderGastos } from './screens/gastos.js?v=4';
@@ -39,6 +40,7 @@ function navItemsFor( perms ) {
 		items.push( { id: 'analitica', label: 'Analítica' } );
 	}
 	items.push( { id: 'ventas', label: 'Ventas' } );
+	items.push( { id: 'ventas-resumen', label: 'Resumen del mes', sub: true } );
 	if ( perms.canSeeProductos ) {
 		items.push( { id: 'productos', label: 'Productos' } );
 	}
@@ -289,7 +291,7 @@ function renderApp() {
 				<nav class="acp-nav">
 					${ navItemsFor( perms ).map(
 						( item ) => `
-						<button type="button" class="acp-nav__item ${ item.id === state.activeNav ? 'is-active' : '' }" data-nav="${ item.id }">
+						<button type="button" class="acp-nav__item ${ item.sub ? 'acp-nav__item--sub' : '' } ${ item.id === state.activeNav ? 'is-active' : '' }" data-nav="${ item.id }">
 							${ item.label }
 						</button>
 					`
@@ -370,6 +372,11 @@ function renderMain() {
 
 	if ( 'ventas' === state.activeNav ) {
 		renderVentas( main, ctx );
+		return;
+	}
+
+	if ( 'ventas-resumen' === state.activeNav ) {
+		renderVentasResumen( main, ctx );
 		return;
 	}
 
