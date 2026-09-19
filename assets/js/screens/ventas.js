@@ -73,7 +73,7 @@ export function renderVentas( main, ctx ) {
 	async function loadVariants() {
 		const { data, error } = await supabase
 			.from( 'product_variants' )
-			.select( 'id, size, color, price, stock_quantity, products ( name )' )
+			.select( 'id, size, color, price, cost, stock_quantity, products ( name )' )
 			.eq( 'organization_id', org.id )
 			.gt( 'stock_quantity', 0 )
 			.order( 'created_at', { ascending: false } );
@@ -220,7 +220,7 @@ export function renderVentas( main, ctx ) {
 				<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
 					<div style="flex:1;min-width:0">
 						<div style="font-weight:600;font-size:13px">${ esc( item.name ) }</div>
-						<div style="color:var(--text-muted);font-size:12px">${ esc( item.size ) }${ item.color ? ' · ' + esc( item.color ) : '' }</div>
+						<div style="color:var(--text-muted);font-size:12px">${ esc( item.size ) }${ item.color ? ' · ' + esc( item.color ) : '' } · Costo: ${ money( item.cost ) }</div>
 					</div>
 					<button type="button" class="c-remove" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;width:36px;height:36px;flex:0 0 auto">&times;</button>
 				</div>
@@ -450,7 +450,7 @@ export function renderVentas( main, ctx ) {
 		if ( existing ) {
 			if ( existing.qty < v.stock_quantity ) existing.qty += 1;
 		} else {
-			cart.push( { variantId: v.id, name: v.products.name, size: v.size, color: v.color, price: v.price, catalogPrice: v.price, stock: v.stock_quantity, qty: 1 } );
+			cart.push( { variantId: v.id, name: v.products.name, size: v.size, color: v.color, price: v.price, catalogPrice: v.price, cost: v.cost, stock: v.stock_quantity, qty: 1 } );
 		}
 		errorMsg = '';
 		successMsg = '';

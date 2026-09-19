@@ -5,7 +5,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js?v=2';
 import { renderProductos } from './screens/productos.js?v=18';
-import { renderVentas } from './screens/ventas.js?v=16';
+import { renderVentas } from './screens/ventas.js?v=17';
 import { renderDashboard } from './screens/dashboard.js?v=15';
 import { renderConfiguracion } from './screens/configuracion.js?v=4';
 import { renderGastos } from './screens/gastos.js?v=4';
