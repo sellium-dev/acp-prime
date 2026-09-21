@@ -49,7 +49,7 @@ export function renderDashboard( main, ctx ) {
 		// comparación con el mes pasado (para "ventas creciendo").
 		const earliestNeeded = new Date( Math.min( chartStart, startOfMonth, startOfLastMonth ) );
 
-		const [ variantsRes, salesRes, topSalesRes, receivableRes, voidedRes, expensesRes, membersRes ] = await Promise.all( [
+		const [ variantsRes, salesRes, topSalesRes, receivableRes, paymentsRes, voidedRes, expensesRes, membersRes ] = await Promise.all( [
 			supabase.from( 'product_variants' ).select( 'size, color, cost, price, stock_quantity, products ( name, low_stock_threshold )' ).eq( 'organization_id', org.id ),
 			supabase
 				.from( 'sales' )
@@ -61,12 +61,24 @@ export function renderDashboard( main, ctx ) {
 				.select( 'quantity, unit_price, unit_cost, product_variants ( product_id, products ( name ) ), sales ( created_at, status )' )
 				.eq( 'organization_id', org.id ),
 			// "Por cobrar": ventas en pre-venta/crédito, sin importar cuándo se
-			// hicieron — es plata pendiente de hoy, no un corte por fecha.
+			// hicieron — es plata pendiente de hoy, no un corte por fecha. Se
+			// trae también sus abonos para descontar lo que ya se cobró.
 			supabase
 				.from( 'sales' )
-				.select( 'total_amount' )
+				.select( 'total_amount, sale_payments ( amount )' )
 				.eq( 'organization_id', org.id )
 				.in( 'status', [ 'pre_venta', 'credito' ] ),
+			// Abonos sobre ventas TODAVÍA pendientes: esa plata ya entró y debe
+			// sumar en "Vendido", aunque la venta como un todo no esté cerrada.
+			// Si una venta ya llegó a 'pagado' (sea directo o por abonos), sus
+			// abonos anteriores se excluyen acá para no contarlos dos veces —
+			// el total completo ya se suma una sola vez más abajo, por la fecha
+			// de creación de la venta, igual que "Marcar pagado" siempre hizo.
+			supabase
+				.from( 'sale_payments' )
+				.select( 'amount, created_at, sales ( status )' )
+				.eq( 'organization_id', org.id )
+				.gte( 'created_at', earliestNeeded.toISOString() ),
 			// "Devuelto este mes": lo que importa es CUÁNDO se anuló, no cuándo
 			// se hizo la venta original — una pre-venta de hace 2 meses que se
 			// anula hoy cuenta en el mes de HOY. Por eso es una consulta aparte
@@ -86,8 +98,10 @@ export function renderDashboard( main, ctx ) {
 			supabase.from( 'memberships' ).select( 'user_id, full_name' ).eq( 'organization_id', org.id ),
 		] );
 
-		if ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || voidedRes.error || expensesRes.error ) {
-			errorMsg = 'No se pudo cargar el Dashboard: ' + ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || voidedRes.error || expensesRes.error ).message;
+		if ( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || paymentsRes.error || voidedRes.error || expensesRes.error ) {
+			errorMsg =
+				'No se pudo cargar el Dashboard: ' +
+				( variantsRes.error || salesRes.error || topSalesRes.error || receivableRes.error || paymentsRes.error || voidedRes.error || expensesRes.error ).message;
 			draw();
 			return;
 		}
@@ -149,8 +163,25 @@ export function renderDashboard( main, ctx ) {
 			} );
 		} );
 
+		// Abonos sobre ventas que a esta altura siguen pendientes: se suman al
+		// período en que se cobraron (no al de la venta original). No afectan
+		// "Utilidad" — la ganancia de esa venta se sigue reconociendo recién
+		// cuando queda 'pagado' por completo, como ya decidimos.
+		( paymentsRes.data || [] )
+			.filter( ( p ) => p.sales && [ 'pre_venta', 'credito' ].includes( p.sales.status ) )
+			.forEach( ( p ) => {
+				const payDate = new Date( p.created_at );
+				const amount = Number( p.amount );
+				if ( payDate >= startOfDay ) todaySold += amount;
+				if ( payDate >= startOfMonth ) monthSold += amount;
+				if ( payDate >= startOfLastMonth && payDate < startOfMonth ) lastMonthSold += amount;
+			} );
+
 		const monthExpenses = ( expensesRes.data || [] ).reduce( ( sum, e ) => sum + Number( e.amount ), 0 );
-		const receivable = ( receivableRes.data || [] ).reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
+		const receivable = ( receivableRes.data || [] ).reduce( ( sum, s ) => {
+			const paid = ( s.sale_payments || [] ).reduce( ( a, p ) => a + Number( p.amount ), 0 );
+			return sum + ( Number( s.total_amount ) - paid );
+		}, 0 );
 
 		const voidedThisMonth = ( voidedRes.data || [] ).reduce( ( sum, s ) => sum + Number( s.total_amount ), 0 );
 

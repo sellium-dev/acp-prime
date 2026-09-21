@@ -57,6 +57,8 @@ export function renderVentas( main, ctx ) {
 	let sales = [];
 	let memberNames = new Map();
 	let editingSaleId = null; // venta cuyo cliente/precios se están corrigiendo
+	let abonandoSaleId = null; // venta a la que se le está por registrar un abono
+	let editingPaymentId = null; // abono ya cargado que se está corrigiendo
 	let range = [ 'mes', 'todos' ].includes( ctx.navParams?.range ) ? ctx.navParams.range : 'hoy';
 	// Acepta un estado solo ("anulado") o varios ("Por cobrar" = pre_venta +
 	// credito) — siempre se normaliza a un array (o null si no aplica).
@@ -96,7 +98,7 @@ export function renderVentas( main, ctx ) {
 		let salesQuery = supabase
 			.from( 'sales' )
 			.select(
-				'id, customer_name, total_amount, created_at, vendor_id, status, voided_at, sale_items ( id, quantity, unit_price, product_variants ( size, color, products ( name ) ) )'
+				'id, customer_name, total_amount, created_at, vendor_id, status, voided_at, sale_items ( id, quantity, unit_price, product_variants ( size, color, products ( name ) ) ), sale_payments ( id, amount, created_at )'
 			)
 			.eq( 'organization_id', org.id )
 			.order( 'created_at', { ascending: false } );
@@ -253,6 +255,10 @@ export function renderVentas( main, ctx ) {
 			.join( ', ' );
 	}
 
+	function paidAmount( s ) {
+		return ( s.sale_payments || [] ).reduce( ( sum, p ) => sum + Number( p.amount ), 0 );
+	}
+
 	function salesTableHtml( rows ) {
 		const cols = 'minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,0.6fr) minmax(0,0.8fr) minmax(0,0.9fr)';
 		return `
@@ -267,6 +273,13 @@ export function renderVentas( main, ctx ) {
 						const voidable = 'anulado' !== s.status;
 						const revertible = 'pagado' === s.status;
 						const isEditing = editingSaleId === s.id;
+						const isAbonando = abonandoSaleId === s.id;
+						const paid = paidAmount( s );
+						const balance = s.total_amount - paid;
+						// Con abonos, el Total de la lista muestra lo que falta por
+						// cobrar (no el total original de la venta) — el total
+						// original queda visible en el detalle de abonos, abajo.
+						const displayTotal = pending ? balance : s.total_amount;
 						return `
 					<div style="padding:12px 18px;border-bottom:1px solid var(--border)">
 						<div style="display:grid;grid-template-columns:${ cols };gap:12px;font-size:13px;align-items:center">
@@ -274,7 +287,7 @@ export function renderVentas( main, ctx ) {
 							<div>${ esc( memberNames.get( s.vendor_id ) || '—' ) }</div>
 							<div style="color:var(--text-muted)">${ esc( s.customer_name || '—' ) }</div>
 							<div>${ s.sale_items.reduce( ( n, it ) => n + it.quantity, 0 ) }</div>
-							<div style="font-weight:700">${ money( s.total_amount ) }</div>
+							<div style="font-weight:700">${ money( displayTotal ) }</div>
 							<div style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px;background:${ status.color.replace( ')', ' / 0.15)' ) };color:${ status.color };width:fit-content">${ status.label }</div>
 						</div>
 						${
@@ -282,10 +295,14 @@ export function renderVentas( main, ctx ) {
 								? editSaleFormHtml( s )
 								: `
 							<div style="font-size:12px;color:var(--text-muted);margin-top:6px">${ saleItemsSummary( s ) }</div>
+							${ paymentsBlockHtml( s, paid, balance ) }
 							${
-								pending || voidable || revertible || isAdmin
+								isAbonando
+									? abonoFormHtml( s, balance )
+									: pending || voidable || revertible || isAdmin
 									? `
 								<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-abonar="${ s.id }">Abonar</button>` : '' }
 									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }">Marcar pagado</button>` : '' }
 									${ revertible ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-revert-pre-venta="${ s.id }">Marcar como pre-venta</button>` : '' }
 									${ isAdmin ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-edit-sale="${ s.id }">Editar venta</button>` : '' }
@@ -305,6 +322,58 @@ export function renderVentas( main, ctx ) {
 				`;
 					} )
 					.join( '' ) }
+			</div>
+		`;
+	}
+
+	// Lista de abonos ya cargados a esta venta, con el resumen de cuánto se
+	// abonó y cuánto resta. El botón "Editar" por abono es solo para admin
+	// (es plata ya contabilizada, mismo criterio que "Editar venta").
+	function paymentsBlockHtml( s, paid, balance ) {
+		const payments = s.sale_payments || [];
+		if ( 0 === payments.length ) return '';
+
+		return `
+			<div style="font-size:12px;font-weight:700;margin-top:8px">
+				Abonado: ${ money( paid ) }${ balance > 0 ? ` — Resta: ${ money( balance ) }` : ' — Pagado por completo' }
+			</div>
+			<div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
+				${ payments
+					.map( ( p ) =>
+						editingPaymentId === p.id
+							? editPaymentFormHtml( p )
+							: `
+					<div style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-muted)">
+						<span>${ formatSaleDateTime( p.created_at ) } — ${ money( p.amount ) }</span>
+						${ isAdmin ? `<button type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;text-decoration:underline;font-size:11px" data-edit-payment="${ p.id }">Editar</button>` : '' }
+					</div>
+				`
+					)
+					.join( '' ) }
+			</div>
+		`;
+	}
+
+	function abonoFormHtml( s, balance ) {
+		return `
+			<div style="margin-top:10px;padding:12px;background:var(--input-bg);border-radius:10px;display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap" data-abono-form="${ s.id }">
+				<div class="acp-field" style="margin-bottom:0">
+					<label>Monto del abono (saldo: ${ money( balance ) })</label>
+					<input id="ab-amount" type="number" min="0" step="1" placeholder="0" style="padding:9px 10px;width:160px" />
+				</div>
+				<button type="button" class="acp-btn-primary" style="width:auto;padding:9px 16px;font-size:13px" data-save-abono="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving ? 'Guardando…' : 'Confirmar abono' }</button>
+				<button type="button" class="acp-btn-secondary" style="width:auto;padding:9px 16px;font-size:13px" data-cancel-abono>Cancelar</button>
+			</div>
+		`;
+	}
+
+	function editPaymentFormHtml( p ) {
+		return `
+			<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap" data-edit-payment-form="${ p.id }">
+				<input id="ep-amount" type="number" min="0" step="1" value="${ escAttr( p.amount ) }"
+					style="width:110px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 8px;color:var(--text);font-size:12px;font-family:inherit" />
+				<button type="button" style="background:none;border:none;color:oklch(0.72 0.16 152);cursor:pointer;font-size:11px" data-save-payment="${ p.id }" ${ saving ? 'disabled' : '' }>Guardar</button>
+				<button type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px" data-cancel-edit-payment>Cancelar</button>
 			</div>
 		`;
 	}
@@ -425,6 +494,42 @@ export function renderVentas( main, ctx ) {
 			btn.addEventListener( 'click', () => handleSaveEditSale( btn.dataset.saveSale ) );
 		} );
 
+		main.querySelectorAll( '[data-abonar]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				abonandoSaleId = btn.dataset.abonar;
+				errorMsg = '';
+				successMsg = '';
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '[data-cancel-abono]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				abonandoSaleId = null;
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '[data-save-abono]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleSaveAbono( btn.dataset.saveAbono ) );
+		} );
+
+		main.querySelectorAll( '[data-edit-payment]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				editingPaymentId = btn.dataset.editPayment;
+				errorMsg = '';
+				successMsg = '';
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '[data-cancel-edit-payment]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => {
+				editingPaymentId = null;
+				draw();
+			} );
+		} );
+		main.querySelectorAll( '[data-save-payment]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleSavePayment( btn.dataset.savePayment ) );
+		} );
+
 		main.querySelectorAll( '.v-range-btn' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', async () => {
 				range = btn.dataset.range;
@@ -518,6 +623,66 @@ export function renderVentas( main, ctx ) {
 			return;
 		}
 		successMsg = 'Venta marcada como pagada.';
+		await loadSales();
+		draw();
+	}
+
+	async function handleSaveAbono( saleId ) {
+		const amount = parseFloat( document.getElementById( 'ab-amount' )?.value );
+
+		if ( ! Number.isFinite( amount ) || amount <= 0 ) {
+			errorMsg = 'El abono debe ser un número mayor a 0.';
+			draw();
+			return;
+		}
+
+		saving = true;
+		errorMsg = '';
+		successMsg = '';
+		draw();
+
+		const { error } = await supabase.rpc( 'register_sale_payment', { p_sale_id: saleId, p_amount: amount } );
+
+		saving = false;
+
+		if ( error ) {
+			errorMsg = 'No se pudo registrar el abono: ' + error.message;
+			draw();
+			return;
+		}
+
+		abonandoSaleId = null;
+		successMsg = 'Abono registrado.';
+		await loadSales();
+		draw();
+	}
+
+	async function handleSavePayment( paymentId ) {
+		const amount = parseFloat( document.getElementById( 'ep-amount' )?.value );
+
+		if ( ! Number.isFinite( amount ) || amount <= 0 ) {
+			errorMsg = 'El abono debe ser un número mayor a 0.';
+			draw();
+			return;
+		}
+
+		saving = true;
+		errorMsg = '';
+		successMsg = '';
+		draw();
+
+		const { error } = await supabase.rpc( 'update_sale_payment', { p_payment_id: paymentId, p_amount: amount } );
+
+		saving = false;
+
+		if ( error ) {
+			errorMsg = 'No se pudo corregir el abono: ' + error.message;
+			draw();
+			return;
+		}
+
+		editingPaymentId = null;
+		successMsg = 'Abono corregido.';
 		await loadSales();
 		draw();
 	}
