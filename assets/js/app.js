@@ -59,6 +59,10 @@ let state = {
 	activeMembership: null,
 	activeNav: 'ventas',
 	navParams: null,
+	isSuperAdmin: false,
+	creatingOrg: false,
+	creatingOrgBusy: false,
+	creatingOrgError: '',
 };
 
 function setState( patch ) {
@@ -92,10 +96,18 @@ async function loadMemberships( userId ) {
 	// se pasa desde afuera (ya lo tenemos de getSession()/signIn()) para no
 	// pagar una llamada de red extra a auth.getUser() acá — eso fue lo que
 	// hizo más lento el login recién.
-	const { data, error } = await supabase
-		.from( 'memberships' )
-		.select( 'id, user_id, role, full_name, organization_id, vendor_permissions, organizations ( id, name, slug, suggested_margin_percent )' )
-		.eq( 'user_id', userId );
+	// Se piden en paralelo: si no eres super admin, super_admins simplemente
+	// no trae ninguna fila tuya (política "select own"), no es un error.
+	const [ membershipsRes, superAdminRes ] = await Promise.all( [
+		supabase
+			.from( 'memberships' )
+			.select( 'id, user_id, role, full_name, organization_id, vendor_permissions, organizations ( id, name, slug, suggested_margin_percent )' )
+			.eq( 'user_id', userId ),
+		supabase.from( 'super_admins' ).select( 'user_id' ).eq( 'user_id', userId ).maybeSingle(),
+	] );
+
+	const { data, error } = membershipsRes;
+	const isSuperAdmin = !! superAdminRes.data;
 
 	if ( error ) {
 		setState( { screen: 'login', loginError: 'No se pudo cargar tu cuenta: ' + error.message } );
@@ -103,6 +115,13 @@ async function loadMemberships( userId ) {
 	}
 
 	if ( ! data || 0 === data.length ) {
+		// Un super admin recién creado todavía no tiene ninguna empresa —
+		// mándalo a la pantalla de selección, donde puede crear la primera,
+		// en vez de dejarlo trabado en el mensaje de "sin empresa".
+		if ( isSuperAdmin ) {
+			setState( { screen: 'org-select', memberships: [], isSuperAdmin } );
+			return;
+		}
 		setState( {
 			screen: 'login',
 			loginError: 'Tu usuario no tiene ninguna empresa asociada todavía. Pide que te agreguen como miembro.',
@@ -114,19 +133,19 @@ async function loadMemberships( userId ) {
 	const saved = data.find( ( m ) => m.organization_id === savedOrgId );
 
 	if ( 1 === data.length ) {
-		selectMembership( data[ 0 ], data );
+		selectMembership( data[ 0 ], data, isSuperAdmin );
 		return;
 	}
 
 	if ( saved ) {
-		selectMembership( saved, data );
+		selectMembership( saved, data, isSuperAdmin );
 		return;
 	}
 
-	setState( { screen: 'org-select', memberships: data } );
+	setState( { screen: 'org-select', memberships: data, isSuperAdmin } );
 }
 
-function selectMembership( membership, allMemberships ) {
+function selectMembership( membership, allMemberships, isSuperAdmin ) {
 	sessionStorage.setItem( 'acp_prime_org_id', membership.organization_id );
 	const perms = permissionsFor( membership );
 	setState( {
@@ -134,6 +153,7 @@ function selectMembership( membership, allMemberships ) {
 		memberships: allMemberships,
 		activeMembership: membership,
 		activeNav: perms.canSeeDashboard ? 'dashboard' : 'ventas',
+		isSuperAdmin: !! isSuperAdmin,
 	} );
 }
 
@@ -258,6 +278,8 @@ function renderOrgSelect() {
 						)
 						.join( '' ) }
 				</div>
+
+				${ state.isSuperAdmin ? renderCreateOrgSection() : '' }
 			</div>
 		</div>
 	`;
@@ -265,9 +287,140 @@ function renderOrgSelect() {
 	root.querySelectorAll( '[data-org]' ).forEach( ( btn ) => {
 		btn.addEventListener( 'click', () => {
 			const membership = state.memberships.find( ( m ) => m.organization_id === btn.dataset.org );
-			selectMembership( membership, state.memberships );
+			selectMembership( membership, state.memberships, state.isSuperAdmin );
 		} );
 	} );
+
+	if ( state.isSuperAdmin ) {
+		wireCreateOrgSection();
+	}
+}
+
+// Visible solo para super admins (state.isSuperAdmin, cargado en
+// loadMemberships desde la tabla super_admins). Cualquier otro usuario ni
+// siquiera ve el botón — y aunque lo viera, el insert real está bloqueado
+// del lado del servidor por la política "organizations_insert_super_admin"
+// (migración 016), así que la restricción no depende solo de esconder el botón.
+function renderCreateOrgSection() {
+	if ( ! state.creatingOrg ) {
+		return `
+			<button type="button" class="acp-btn-secondary" id="acp-org-new-toggle" style="margin-top:14px;border-style:dashed">
+				+ Crear nueva empresa
+			</button>
+		`;
+	}
+
+	return `
+		<div style="margin-top:16px">
+			<div class="acp-field">
+				<label>Nombre de la nueva empresa</label>
+				<input id="acp-org-name" placeholder="Ej. Lazos de la Suegra" />
+			</div>
+			<div class="acp-field">
+				<label>Tu nombre (como administrador de esa empresa)</label>
+				<input id="acp-org-admin-name" placeholder="Tu nombre completo" />
+			</div>
+			${
+				state.creatingOrgError
+					? `<div style="color:oklch(0.65 0.18 25);font-size:13px;margin-bottom:10px">${ escapeHtml( state.creatingOrgError ) }</div>`
+					: ''
+			}
+			<div style="display:flex;gap:8px">
+				<button type="button" class="acp-btn-primary" id="acp-org-save" ${ state.creatingOrgBusy ? 'disabled' : '' } style="width:auto;padding:10px 20px">
+					${ state.creatingOrgBusy ? 'Creando…' : 'Crear empresa' }
+				</button>
+				<button type="button" class="acp-btn-secondary" id="acp-org-cancel" style="width:auto;padding:10px 20px" ${ state.creatingOrgBusy ? 'disabled' : '' }>
+					Cancelar
+				</button>
+			</div>
+		</div>
+	`;
+}
+
+function wireCreateOrgSection() {
+	const toggleBtn = document.getElementById( 'acp-org-new-toggle' );
+	if ( toggleBtn ) {
+		toggleBtn.addEventListener( 'click', () => setState( { creatingOrg: true, creatingOrgError: '' } ) );
+	}
+
+	const cancelBtn = document.getElementById( 'acp-org-cancel' );
+	if ( cancelBtn ) {
+		cancelBtn.addEventListener( 'click', () => setState( { creatingOrg: false, creatingOrgError: '' } ) );
+	}
+
+	const saveBtn = document.getElementById( 'acp-org-save' );
+	if ( saveBtn ) {
+		saveBtn.addEventListener( 'click', handleCreateOrg );
+	}
+}
+
+function slugify( name ) {
+	return name
+		.normalize( 'NFD' )
+		.replace( /[̀-ͯ]/g, '' )
+		.toLowerCase()
+		.trim()
+		.replace( /[^a-z0-9]+/g, '-' )
+		.replace( /(^-|-$)/g, '' );
+}
+
+async function handleCreateOrg() {
+	const name = document.getElementById( 'acp-org-name' ).value.trim();
+	const adminName = document.getElementById( 'acp-org-admin-name' ).value.trim();
+
+	if ( '' === name || '' === adminName ) {
+		setState( { creatingOrgError: 'Completa el nombre de la empresa y el tuyo.' } );
+		return;
+	}
+
+	setState( { creatingOrgBusy: true, creatingOrgError: '' } );
+
+	const {
+		data: { user },
+	} = await supabase.auth.getUser();
+
+	const baseSlug = slugify( name ) || 'empresa';
+	let slug = baseSlug;
+	let org = null;
+	let orgError = null;
+
+	// organizations.slug es "unique" — si ya existe, reintenta con un
+	// sufijo numérico en vez de fallar de una.
+	for ( let attempt = 0; attempt < 5; attempt++ ) {
+		const { data, error } = await supabase.from( 'organizations' ).insert( { name, slug } ).select().single();
+		if ( ! error ) {
+			org = data;
+			break;
+		}
+		if ( '23505' !== error.code ) {
+			orgError = error;
+			break;
+		}
+		slug = `${ baseSlug }-${ attempt + 2 }`;
+	}
+
+	if ( ! org ) {
+		setState( {
+			creatingOrgBusy: false,
+			creatingOrgError: 'No se pudo crear la empresa: ' + ( orgError ? orgError.message : 'inténtalo de nuevo.' ),
+		} );
+		return;
+	}
+
+	const { error: membershipError } = await supabase
+		.from( 'memberships' )
+		.insert( { user_id: user.id, organization_id: org.id, full_name: adminName, role: 'administrador' } );
+
+	if ( membershipError ) {
+		setState( {
+			creatingOrgBusy: false,
+			creatingOrgError: 'Empresa creada, pero no se pudo vincular tu usuario: ' + membershipError.message,
+		} );
+		return;
+	}
+
+	setState( { creatingOrg: false, creatingOrgBusy: false } );
+	await loadMemberships( user.id );
 }
 
 function renderApp() {
@@ -297,7 +450,7 @@ function renderApp() {
 					`
 					).join( '' ) }
 					${
-						state.memberships.length > 1
+						state.memberships.length > 1 || state.isSuperAdmin
 							? '<button type="button" class="acp-nav__item" data-nav="switch-org">Cambiar de empresa</button>'
 							: ''
 					}
