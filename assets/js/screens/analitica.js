@@ -159,6 +159,7 @@ export function renderAnalitica( main, ctx ) {
 				invested,
 				recovered,
 				pending,
+				saleAmount: recovered + pending, // en cuánto se vendió lo que ya se vendió de este lote
 				recoveredPct,
 				pendingPct: Math.round( combinedPct ) - recoveredPct,
 				recoveredPctLabel: invested > 0 ? Math.min( 100, Math.round( ( recovered / invested ) * 100 ) ) : 0,
@@ -219,6 +220,7 @@ export function renderAnalitica( main, ctx ) {
 				invested,
 				recovered,
 				pending,
+				saleAmount: recovered + pending, // en cuánto se vendió lo que ya se vendió de esta carga
 				recoveredPct,
 				pendingPct: Math.round( combinedPct ) - recoveredPct,
 				recoveredPctLabel: invested > 0 ? Math.min( 100, Math.round( ( recovered / invested ) * 100 ) ) : 0,
@@ -592,7 +594,7 @@ export function renderAnalitica( main, ctx ) {
 						<div style="width:${ p.pendingPct }%;height:100%;background:oklch(0.75 0.16 95)"></div>
 					</div>
 					<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted)">
-						<span>Recuperado ${ money( p.recovered ) }${ p.pending > 0 ? ` · Por cobrar ${ money( p.pending ) }` : '' } · Invertido ${ money( p.invested ) }</span>
+						<span>${ p.saleAmount > 0 ? `Venta ${ money( p.saleAmount ) } · ` : '' }Recuperado ${ money( p.recovered ) }${ p.pending > 0 ? ` · Por cobrar ${ money( p.pending ) }` : '' } · Invertido ${ money( p.invested ) }</span>
 						<span style="font-weight:700;color:oklch(0.72 0.16 152)">${ p.recoveredPctLabel }% de lo invertido</span>
 					</div>
 				</div>
@@ -617,7 +619,7 @@ export function renderAnalitica( main, ctx ) {
 					<div style="width:${ l.pendingPct }%;height:100%;background:oklch(0.75 0.16 95)"></div>
 				</div>
 				<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted)">
-					<span>Recuperado ${ money( l.recovered ) }${ l.pending > 0 ? ` · Por cobrar ${ money( l.pending ) }` : '' } · Invertido ${ money( l.invested ) }</span>
+					<span>${ l.saleAmount > 0 ? `Venta ${ money( l.saleAmount ) } · ` : '' }Recuperado ${ money( l.recovered ) }${ l.pending > 0 ? ` · Por cobrar ${ money( l.pending ) }` : '' } · Invertido ${ money( l.invested ) }</span>
 					<span style="font-weight:700;color:oklch(0.72 0.16 152)">${ l.recoveredPctLabel }% de lo invertido</span>
 				</div>
 			</div>
