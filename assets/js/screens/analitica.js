@@ -43,14 +43,16 @@ export function renderAnalitica( main, ctx ) {
 			// lote de stock (stock_lot_id, solo pagado).
 			supabase
 				.from( 'sale_items' )
-				.select( 'quantity, unit_price, unit_cost, stock_lot_id, product_variants ( product_id, products ( name ) ), sales ( created_at, status )' )
+				.select( 'sale_id, quantity, unit_price, unit_cost, stock_lot_id, product_variants ( product_id, products ( name ) ), sales ( created_at, status )' )
 				.eq( 'organization_id', org.id ),
 			// Abonos sobre ventas que siguen pendientes — se usan en el
 			// comparativo mensual para mover esa plata de "por cobrar" a
-			// "vendido" del mes en que se hizo la venta (ver buildMonthlyTrend).
+			// "vendido" del mes en que se hizo la venta (ver buildMonthlyTrend),
+			// y en Lotes de stock para repartirla entre los lotes de esa venta
+			// (ver buildLots).
 			supabase
 				.from( 'sale_payments' )
-				.select( 'amount, sales ( created_at, status )' )
+				.select( 'sale_id, amount, sales ( created_at, status )' )
 				.eq( 'organization_id', org.id ),
 			supabase
 				.from( 'expenses' )
@@ -82,19 +84,40 @@ export function renderAnalitica( main, ctx ) {
 		totalProducts = byProduct.size;
 
 		const items = itemsRes.data || [];
-		buildMonthlyTrend( items, paymentsRes.data || [], expensesRes.data || [], startOfMonth );
+		const payments = paymentsRes.data || [];
+		buildMonthlyTrend( items, payments, expensesRes.data || [], startOfMonth );
 		buildNoSales( items, byProduct );
 		buildVoidedByProduct( items );
-		buildLots( lotsRes.data || [], items );
+		buildLots( lotsRes.data || [], items, payments );
 
 		draw();
 	}
 
-	// Cuánto se ha recuperado (en plata, solo Pagado) de cada lote de stock
-	// — la "barrita" que compara lo vendido de ESE lote puntual contra lo
-	// que costó comprarlo, sin importar si el producto ya tenía stock viejo
-	// antes (cada venta ya sabe de qué lote salió gracias al FIFO).
-	function buildLots( lotRows, items ) {
+	// Cuánto se ha recuperado (en plata) de cada lote de stock — la "barrita"
+	// que compara lo vendido de ESE lote puntual contra lo que costó
+	// comprarlo, sin importar si el producto ya tenía stock viejo antes
+	// (cada venta ya sabe de qué lote salió gracias al FIFO). "Recuperado"
+	// cuenta ventas Pagado completas MÁS la parte ya abonada de ventas que
+	// siguen en Pre-venta/Crédito — un abono es plata real en caja, aunque
+	// la venta no esté saldada del todo.
+	function buildLots( lotRows, items, payments ) {
+		const paidBySale = new Map();
+		payments.forEach( ( p ) => {
+			if ( ! p.sale_id ) return;
+			paidBySale.set( p.sale_id, ( paidBySale.get( p.sale_id ) || 0 ) + Number( p.amount ) );
+		} );
+
+		// El abono es por venta, no por línea — se reparte entre los lotes de
+		// esa venta a prorrata de lo que pesa cada línea sobre el total
+		// pendiente de la venta.
+		const grossBySalePending = new Map();
+		items.forEach( ( it ) => {
+			if ( ! it.sale_id ) return;
+			if ( 'pre_venta' !== it.sales?.status && 'credito' !== it.sales?.status ) return;
+			const amount = it.unit_price * it.quantity;
+			grossBySalePending.set( it.sale_id, ( grossBySalePending.get( it.sale_id ) || 0 ) + amount );
+		} );
+
 		const recoveredByLot = new Map();
 		const pendingByLot = new Map();
 		items
@@ -104,7 +127,11 @@ export function renderAnalitica( main, ctx ) {
 				if ( 'pagado' === it.sales?.status ) {
 					recoveredByLot.set( it.stock_lot_id, ( recoveredByLot.get( it.stock_lot_id ) || 0 ) + amount );
 				} else if ( 'pre_venta' === it.sales?.status || 'credito' === it.sales?.status ) {
-					pendingByLot.set( it.stock_lot_id, ( pendingByLot.get( it.stock_lot_id ) || 0 ) + amount );
+					const saleGross = grossBySalePending.get( it.sale_id ) || 0;
+					const salePaid = Math.min( paidBySale.get( it.sale_id ) || 0, saleGross );
+					const itemPaidShare = saleGross > 0 ? amount * ( salePaid / saleGross ) : 0;
+					recoveredByLot.set( it.stock_lot_id, ( recoveredByLot.get( it.stock_lot_id ) || 0 ) + itemPaidShare );
+					pendingByLot.set( it.stock_lot_id, ( pendingByLot.get( it.stock_lot_id ) || 0 ) + ( amount - itemPaidShare ) );
 				}
 			} );
 
@@ -512,7 +539,7 @@ export function renderAnalitica( main, ctx ) {
 				<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:10px">
 					<div>
 						<div style="font-size:15px;font-weight:700">Cargas de stock</div>
-						<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Cada compra/reposición que guardaste (puede traer varios productos), y cuánto se ha recuperado (Pagado) o está por cobrar (Pre-venta/Crédito) desde entonces — toca una carga para ver el detalle por producto</div>
+						<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-top:2px">Cada compra/reposición que guardaste (puede traer varios productos), y cuánto se ha recuperado (Pagado + abonos de Pre-venta/Crédito) o sigue por cobrar desde entonces — toca una carga para ver el detalle por producto</div>
 					</div>
 					<div style="display:flex;gap:4px;background:var(--input-bg);border-radius:9px;padding:3px">
 						<button type="button" class="lots-range-btn" data-range="abiertos" style="padding:7px 14px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;background:${ 'abiertos' === lotsRange ? 'var(--accent)' : 'transparent' };color:${ 'abiertos' === lotsRange ? 'var(--accent-contrast)' : 'var(--text-muted)' }">Con stock</button>
@@ -527,7 +554,7 @@ export function renderAnalitica( main, ctx ) {
 						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:6px">Plata gastada comprando stock, incluye lo ya vendido — no es el valor de tu bodega hoy, eso se ve en el Dashboard</div>
 					</div>
 					<div>
-						<div style="font-size:11px;color:var(--text-muted)">Recuperado (Pagado)</div>
+						<div style="font-size:11px;color:var(--text-muted)">Recuperado (cobrado)</div>
 						<div style="font-size:16px;font-weight:800;color:oklch(0.72 0.16 152)">${ money( totals.recovered ) }</div>
 					</div>
 					<div>
