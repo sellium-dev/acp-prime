@@ -129,11 +129,13 @@ export function renderVentasResumen( main, ctx ) {
 				units: 0,
 				revenue: 0,
 				profit: 0,
+				abonado: 0, // Plata ya cobrada de ventas de este vendedor que siguen pendientes
 				pending: 0, // Saldo real que falta cobrar de este vendedor (ya descuenta abonos)
 				items: [],
 			};
 			vendorEntry.salesCount += 1;
 			vendorEntry.pending += outstanding;
+			if ( 'pagado' !== s.status ) vendorEntry.abonado += paid;
 
 			const customerKey = s.customer_name && s.customer_name.trim() ? s.customer_name.trim() : 'Sin nombre';
 			const customerEntry = byCustomer.get( customerKey ) || { name: customerKey, items: [], total: 0 };
@@ -405,15 +407,35 @@ export function renderVentasResumen( main, ctx ) {
 
 	function vendorRowHtml( v ) {
 		const isExpanded = v.id === expandedVendorId;
+		// Sin nada pendiente (ni abonado ni por cobrar), se muestra solo el
+		// monto Pagado, limpio — el desglose de tres columnas solo aporta
+		// cuando de verdad hay plata en juego además de lo ya cerrado.
+		const allSettled = 0 === v.abonado && 0 === v.pending;
 		return `
 			<div>
 				<div class="vr-vendor-row" data-vendor-row="${ escAttr( v.id ) }" style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer;background:${ isExpanded ? 'var(--input-bg)' : 'transparent' }">
 					<div style="flex:1;min-width:0;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${ esc( v.name ) }</div>
 					<div style="font-size:11px;color:var(--text-muted)">${ v.salesCount } ${ 1 === v.salesCount ? 'venta' : 'ventas' } · ${ v.units } uds</div>
-					<div style="text-align:right">
-						<div style="font-size:13px;font-weight:700">${ money( v.revenue ) }</div>
-						${ v.pending > 0 ? `<div style="font-size:10px;color:var(--text-faint2, var(--text-muted))">+ ${ money( v.pending ) } por cobrar</div>` : '' }
-					</div>
+					${
+						allSettled
+							? `<div style="font-size:13px;font-weight:700">${ money( v.revenue ) }</div>`
+							: `
+						<div style="display:flex;gap:16px;text-align:right">
+							<div>
+								<div style="font-size:10px;color:var(--text-muted)">Pagado</div>
+								<div style="font-size:13px;font-weight:700">${ money( v.revenue ) }</div>
+							</div>
+							<div>
+								<div style="font-size:10px;color:var(--text-muted)">Abonado</div>
+								<div style="font-size:13px;font-weight:700;color:oklch(0.75 0.16 95)">${ money( v.abonado ) }</div>
+							</div>
+							<div>
+								<div style="font-size:10px;color:var(--text-muted)">Falta</div>
+								<div style="font-size:13px;font-weight:700">${ money( v.pending ) }</div>
+							</div>
+						</div>
+					`
+					}
 				</div>
 				${ isExpanded ? vendorItemsHtml( v ) : '' }
 			</div>
