@@ -32,7 +32,7 @@ export function renderVentasResumen( main, ctx ) {
 			supabase
 				.from( 'sales' )
 				.select(
-					'id, customer_name, total_amount, created_at, vendor_id, status, sale_items ( id, quantity, unit_price, unit_cost, stock_lot_id, product_variants ( size, color, products ( name ) ) )'
+					'id, customer_name, total_amount, created_at, vendor_id, status, sale_items ( id, quantity, unit_price, unit_cost, stock_lot_id, product_variants ( size, color, products ( name ) ) ), sale_payments ( amount )'
 				)
 				.eq( 'organization_id', org.id )
 				.neq( 'status', 'anulado' )
@@ -90,10 +90,14 @@ export function renderVentasResumen( main, ctx ) {
 	// esto vuelve a pedir datos, solo agrupa lo que ya se cargó.
 	function computeStats() {
 		let units = 0;
+		// value: Pagado = plata realmente cobrada (ventas Pagado + abonos de
+		// ventas que siguen pendientes); Pre-venta/Crédito = SALDO que falta
+		// cobrar (total − abonado), no el monto bruto de la venta. gross/paid
+		// se guardan aparte para poder explicar el número en pantalla.
 		const byStatus = {
-			pagado: { count: 0, value: 0 },
-			pre_venta: { count: 0, value: 0 },
-			credito: { count: 0, value: 0 },
+			pagado: { count: 0, value: 0, gross: 0 },
+			pre_venta: { count: 0, value: 0, gross: 0, paid: 0 },
+			credito: { count: 0, value: 0, gross: 0, paid: 0 },
 		};
 		const items = [];
 		const byCustomer = new Map();
@@ -101,10 +105,20 @@ export function renderVentasResumen( main, ctx ) {
 		const bySizeColor = new Map();
 
 		sales.forEach( ( s ) => {
-			const statusBucket = byStatus[ s.status ];
-			if ( statusBucket ) {
-				statusBucket.count += 1;
-				statusBucket.value += Number( s.total_amount );
+			const gross = Number( s.total_amount );
+			const paid = ( s.sale_payments || [] ).reduce( ( sum, p ) => sum + Number( p.amount ), 0 );
+			const outstanding = 'pagado' === s.status ? 0 : Math.max( 0, gross - paid );
+
+			if ( 'pagado' === s.status ) {
+				byStatus.pagado.count += 1;
+				byStatus.pagado.gross += gross;
+				byStatus.pagado.value += gross;
+			} else if ( byStatus[ s.status ] ) {
+				byStatus[ s.status ].count += 1;
+				byStatus[ s.status ].gross += gross;
+				byStatus[ s.status ].paid += paid;
+				byStatus[ s.status ].value += outstanding;
+				if ( paid > 0 ) byStatus.pagado.value += paid; // abono ya cobrado, aunque la venta siga pendiente
 			}
 
 			const vendorKey = s.vendor_id;
@@ -115,10 +129,11 @@ export function renderVentasResumen( main, ctx ) {
 				units: 0,
 				revenue: 0,
 				profit: 0,
-				pending: 0, // Pre-venta + Crédito de este vendedor, no cuenta como Ganancia todavía
+				pending: 0, // Saldo real que falta cobrar de este vendedor (ya descuenta abonos)
 				items: [],
 			};
 			vendorEntry.salesCount += 1;
+			vendorEntry.pending += outstanding;
 
 			const customerKey = s.customer_name && s.customer_name.trim() ? s.customer_name.trim() : 'Sin nombre';
 			const customerEntry = byCustomer.get( customerKey ) || { name: customerKey, items: [], total: 0 };
@@ -129,8 +144,6 @@ export function renderVentasResumen( main, ctx ) {
 				if ( 'pagado' === s.status ) {
 					vendorEntry.revenue += it.unit_price * it.quantity;
 					vendorEntry.profit += ( it.unit_price - it.unit_cost ) * it.quantity;
-				} else {
-					vendorEntry.pending += it.unit_price * it.quantity;
 				}
 
 				const name = it.product_variants?.products?.name || 'Producto';
@@ -200,7 +213,7 @@ export function renderVentasResumen( main, ctx ) {
 						? '<div class="acp-empty-state">No hay ventas en este período.</div>'
 						: `
 					${ kpiRowHtml( stats ) }
-					${ statusDetailFilter ? statusDetailSectionHtml( stats.items ) : '' }
+					${ statusDetailFilter ? statusDetailSectionHtml( stats ) : '' }
 					${ pieSectionHtml( stats.byStatus ) }
 					${ extraMetricsHtml( stats ) }
 					${ customersHtml( stats.customerRows ) }
@@ -248,15 +261,20 @@ export function renderVentasResumen( main, ctx ) {
 					<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:4px">${ 'all' === statusDetailFilter ? 'Click para ocultar el detalle' : 'Click para ver el detalle' }</div>
 				</div>
 				${ [ 'pagado', 'pre_venta', 'credito' ]
-					.map(
-						( key ) => `
+					.map( ( key ) => {
+						const b = stats.byStatus[ key ];
+						const sub =
+							'pagado' === key
+								? `${ b.count } ${ 1 === b.count ? 'venta' : 'ventas' }${ b.value > b.gross ? ` · incluye ${ money( b.value - b.gross ) } abonado` : '' }`
+								: `${ b.count } ${ 1 === b.count ? 'venta' : 'ventas' }${ b.paid > 0 ? ` · ${ money( b.paid ) } ya abonado` : '' }`;
+						return `
 					<div class="acp-kpi-card" style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;cursor:pointer" data-status-card="${ key }">
-						<div style="font-size:12px;color:var(--text-muted);font-weight:600;margin-bottom:8px">${ STATUS_META[ key ].label }</div>
-						<div style="font-size:22px;font-weight:800;color:${ STATUS_META[ key ].color }">${ money( stats.byStatus[ key ].value ) }</div>
-						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:4px">${ stats.byStatus[ key ].count } ${ 1 === stats.byStatus[ key ].count ? 'venta' : 'ventas' } · ${ key === statusDetailFilter ? 'ocultar' : 'ver' } detalle</div>
+						<div style="font-size:12px;color:var(--text-muted);font-weight:600;margin-bottom:8px">${ STATUS_META[ key ].label }${ 'pagado' !== key ? ' (falta cobrar)' : '' }</div>
+						<div style="font-size:22px;font-weight:800;color:${ STATUS_META[ key ].color }">${ money( b.value ) }</div>
+						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted));margin-top:4px">${ sub } · ${ key === statusDetailFilter ? 'ocultar' : 'ver' } detalle</div>
 					</div>
-				`
-					)
+				`;
+					} )
 					.join( '' ) }
 			</div>
 			<div style="background:var(--input-bg);border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
@@ -266,17 +284,24 @@ export function renderVentasResumen( main, ctx ) {
 		`;
 	}
 
-	function statusDetailSectionHtml( items ) {
-		const filtered = 'all' === statusDetailFilter ? items : items.filter( ( it ) => it.status === statusDetailFilter );
-		const title = 'all' === statusDetailFilter ? 'Detalle por artículo — todos' : `Detalle por artículo — ${ STATUS_META[ statusDetailFilter ].label }`;
-		return articleDetailHtml( filtered, title );
+	function statusDetailSectionHtml( stats ) {
+		const key = statusDetailFilter;
+		const filtered = 'all' === key ? stats.items : stats.items.filter( ( it ) => it.status === key );
+		const title = 'all' === key ? 'Detalle por artículo — todos' : `Detalle por artículo — ${ STATUS_META[ key ].label }`;
+		const bucket = 'all' === key ? null : stats.byStatus[ key ];
+		const note =
+			bucket && bucket.paid > 0
+				? `Abonado ${ money( bucket.paid ) } de ${ money( bucket.gross ) } — quedan ${ money( bucket.value ) } por cobrar`
+				: '';
+		return articleDetailHtml( filtered, title, note );
 	}
 
-	function articleDetailHtml( items, title ) {
+	function articleDetailHtml( items, title, note ) {
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px;margin-bottom:20px">
 				<div style="font-size:15px;font-weight:700;margin-bottom:4px">${ esc( title || 'Detalle por artículo' ) }</div>
-				<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-bottom:14px">Costo y ganancia son por unidad — la ganancia ya descuenta el costo (precio − costo)</div>
+				<div style="font-size:12px;color:var(--text-faint2, var(--text-muted));margin-bottom:${ note ? '4px' : '14px' }">Costo y ganancia son por unidad — la ganancia ya descuenta el costo (precio − costo)</div>
+				${ note ? `<div style="font-size:12px;color:var(--text);font-weight:600;margin-bottom:14px">${ esc( note ) }</div>` : '' }
 				<div style="display:flex;flex-direction:column;gap:8px">
 					${
 						0 === items.length
@@ -323,7 +348,14 @@ export function renderVentasResumen( main, ctx ) {
 			color: STATUS_META[ key ].color,
 			count: byStatus[ key ].count,
 			value: byStatus[ key ].value,
+			gross: byStatus[ key ].gross,
+			paid: byStatus[ key ].paid || 0,
 		} ) );
+
+		const tooltipFor = ( seg ) => {
+			const base = `${ seg.label }: ${ seg.count } ${ 1 === seg.count ? 'venta' : 'ventas' } · ${ money( seg.value ) }`;
+			return seg.paid > 0 ? `${ base } (de ${ money( seg.gross ) }, abonado ${ money( seg.paid ) })` : base;
+		};
 
 		const totalCount = segments.reduce( ( sum, s ) => sum + s.count, 0 );
 		const withCount = segments.filter( ( s ) => s.count > 0 );
@@ -337,8 +369,7 @@ export function renderVentasResumen( main, ctx ) {
 			svgBody = `<circle cx="${ cx }" cy="${ cy }" r="${ r }" fill="var(--input-bg)"></circle>`;
 		} else if ( 1 === withCount.length ) {
 			const seg = withCount[ 0 ];
-			const tooltip = `${ seg.label }: ${ seg.count } ${ 1 === seg.count ? 'venta' : 'ventas' } · ${ money( seg.value ) }`;
-			svgBody = `<circle class="acp-chart-segment" data-tooltip="${ escAttr( tooltip ) }" cx="${ cx }" cy="${ cy }" r="${ r }" fill="${ seg.color }"></circle>`;
+			svgBody = `<circle class="acp-chart-segment" data-tooltip="${ escAttr( tooltipFor( seg ) ) }" cx="${ cx }" cy="${ cy }" r="${ r }" fill="${ seg.color }"></circle>`;
 		} else {
 			let angle = -Math.PI / 2;
 			svgBody = withCount
@@ -347,8 +378,7 @@ export function renderVentasResumen( main, ctx ) {
 					const start = angle;
 					const end = angle + slice;
 					angle = end;
-					const tooltip = `${ seg.label }: ${ seg.count } ${ 1 === seg.count ? 'venta' : 'ventas' } · ${ money( seg.value ) }`;
-					return `<path class="acp-chart-segment" data-tooltip="${ escAttr( tooltip ) }" d="${ arcPath( cx, cy, r, start, end ) }" fill="${ seg.color }" stroke="var(--card)" stroke-width="2"></path>`;
+					return `<path class="acp-chart-segment" data-tooltip="${ escAttr( tooltipFor( seg ) ) }" d="${ arcPath( cx, cy, r, start, end ) }" fill="${ seg.color }" stroke="var(--card)" stroke-width="2"></path>`;
 				} )
 				.join( '' );
 		}

@@ -34,7 +34,7 @@ export function renderAnalitica( main, ctx ) {
 		const trendStart = new Date( startOfMonth );
 		trendStart.setMonth( trendStart.getMonth() - ( MONTHLY_TREND_MAX_MONTHS - 1 ) );
 
-		const [ variantsRes, itemsRes, expensesRes, lotsRes ] = await Promise.all( [
+		const [ variantsRes, itemsRes, paymentsRes, expensesRes, lotsRes ] = await Promise.all( [
 			supabase.from( 'product_variants' ).select( 'product_id, stock_quantity, products ( name )' ).eq( 'organization_id', org.id ),
 			// Todo el historial de sale_items, cualquier estado — de acá salen
 			// las secciones: comparativo mensual (solo pagado), qué no se
@@ -44,6 +44,13 @@ export function renderAnalitica( main, ctx ) {
 			supabase
 				.from( 'sale_items' )
 				.select( 'quantity, unit_price, unit_cost, stock_lot_id, product_variants ( product_id, products ( name ) ), sales ( created_at, status )' )
+				.eq( 'organization_id', org.id ),
+			// Abonos sobre ventas que siguen pendientes — se usan en el
+			// comparativo mensual para mover esa plata de "por cobrar" a
+			// "vendido" del mes en que se hizo la venta (ver buildMonthlyTrend).
+			supabase
+				.from( 'sale_payments' )
+				.select( 'amount, sales ( created_at, status )' )
 				.eq( 'organization_id', org.id ),
 			supabase
 				.from( 'expenses' )
@@ -59,8 +66,9 @@ export function renderAnalitica( main, ctx ) {
 				.order( 'created_at', { ascending: false } ),
 		] );
 
-		if ( variantsRes.error || itemsRes.error || expensesRes.error || lotsRes.error ) {
-			errorMsg = 'No se pudo cargar la analítica: ' + ( variantsRes.error || itemsRes.error || expensesRes.error || lotsRes.error ).message;
+		if ( variantsRes.error || itemsRes.error || paymentsRes.error || expensesRes.error || lotsRes.error ) {
+			errorMsg =
+				'No se pudo cargar la analítica: ' + ( variantsRes.error || itemsRes.error || paymentsRes.error || expensesRes.error || lotsRes.error ).message;
 			draw();
 			return;
 		}
@@ -74,7 +82,7 @@ export function renderAnalitica( main, ctx ) {
 		totalProducts = byProduct.size;
 
 		const items = itemsRes.data || [];
-		buildMonthlyTrend( items, expensesRes.data || [], startOfMonth );
+		buildMonthlyTrend( items, paymentsRes.data || [], expensesRes.data || [], startOfMonth );
 		buildNoSales( items, byProduct );
 		buildVoidedByProduct( items );
 		buildLots( lotsRes.data || [], items );
@@ -197,7 +205,7 @@ export function renderAnalitica( main, ctx ) {
 	// Ganancia neta (ventas Pagado menos gastos) por mes, últimos
 	// MONTHLY_TREND_MAX_MONTHS — se calcula todo de una vez y el selector
 	// 3/6/12 meses solo recorta este mismo array, sin pedir nada de nuevo.
-	function buildMonthlyTrend( items, expenses, currentMonthStart ) {
+	function buildMonthlyTrend( items, payments, expenses, currentMonthStart ) {
 		const months = [];
 		for ( let i = MONTHLY_TREND_MAX_MONTHS - 1; i >= 0; i-- ) {
 			const d = new Date( currentMonthStart );
@@ -239,6 +247,22 @@ export function renderAnalitica( main, ctx ) {
 				// ya se marcó Pagado, deja de contar acá y pasa a "sold").
 				bucket.receivable += it.unit_price * it.quantity;
 			}
+		} );
+
+		// Abonos sobre ventas que TODAVÍA están pendientes: mueven esa plata de
+		// "por cobrar" a "vendido", en el mes de la venta original (mismo
+		// criterio que ya usa "receivable" acá arriba — por mes de la venta,
+		// no por mes del abono). Si la venta ya quedó 'pagado' (por abono o a
+		// mano), el loop de items de arriba ya la sumó entera a "sold" — no se
+		// vuelve a sumar acá para no duplicarla. No afecta unidades/ganancia
+		// ni el detalle por producto: un abono es un monto de la venta, no
+		// algo repartible línea por línea.
+		payments.forEach( ( p ) => {
+			if ( ! p.sales || ! [ 'pre_venta', 'credito' ].includes( p.sales.status ) ) return;
+			const bucket = byKey.get( monthKey( new Date( p.sales.created_at ) ) );
+			if ( ! bucket ) return;
+			bucket.sold += Number( p.amount );
+			bucket.receivable -= Number( p.amount );
 		} );
 
 		expenses.forEach( ( e ) => {
@@ -434,7 +458,7 @@ export function renderAnalitica( main, ctx ) {
 				<div style="font-size:14px;font-weight:700;margin-bottom:12px">Detalle de ${ esc( m.label ) }</div>
 				<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px">
 					<div>
-						<div style="font-size:11px;color:var(--text-muted)">Vendido (Pagado)</div>
+						<div style="font-size:11px;color:var(--text-muted)">Vendido (cobrado)</div>
 						<div style="font-size:16px;font-weight:800">${ money( m.sold ) }</div>
 						<div style="font-size:11px;color:var(--text-faint2, var(--text-muted))">${ m.units } unidades</div>
 					</div>
