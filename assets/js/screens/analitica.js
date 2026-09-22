@@ -592,8 +592,8 @@ export function renderAnalitica( main, ctx ) {
 						<div style="width:${ p.pendingPct }%;height:100%;background:oklch(0.75 0.16 95)"></div>
 					</div>
 					<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted)">
-						<span>Recuperado ${ money( p.recovered ) }${ p.pending > 0 ? ` · Por cobrar ${ money( p.pending ) }` : '' } de ${ money( p.invested ) }</span>
-						<span style="font-weight:700;color:oklch(0.72 0.16 152)">${ p.recoveredPctLabel }%</span>
+						<span>Recuperado ${ money( p.recovered ) }${ p.pending > 0 ? ` · Por cobrar ${ money( p.pending ) }` : '' } · Invertido ${ money( p.invested ) }</span>
+						<span style="font-weight:700;color:oklch(0.72 0.16 152)">${ p.recoveredPctLabel }% de lo invertido</span>
 					</div>
 				</div>
 				${
@@ -617,8 +617,8 @@ export function renderAnalitica( main, ctx ) {
 					<div style="width:${ l.pendingPct }%;height:100%;background:oklch(0.75 0.16 95)"></div>
 				</div>
 				<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted)">
-					<span>Recuperado ${ money( l.recovered ) }${ l.pending > 0 ? ` · Por cobrar ${ money( l.pending ) }` : '' } de ${ money( l.invested ) }</span>
-					<span style="font-weight:700;color:oklch(0.72 0.16 152)">${ l.recoveredPctLabel }%</span>
+					<span>Recuperado ${ money( l.recovered ) }${ l.pending > 0 ? ` · Por cobrar ${ money( l.pending ) }` : '' } · Invertido ${ money( l.invested ) }</span>
+					<span style="font-weight:700;color:oklch(0.72 0.16 152)">${ l.recoveredPctLabel }% de lo invertido</span>
 				</div>
 			</div>
 		`;
