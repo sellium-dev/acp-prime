@@ -141,6 +141,20 @@ que ya existe.
   `013` la fechó "viernes 28 de octubre", pero esa fecha cae miércoles; el
   28 de agosto sí cae viernes, así que el mes correcto era agosto. Ajusta
   `stock_purchases.created_at` y `stock_lots.created_at` de esa carga.
+- **`016_crear_empresas_super_admin.sql`**: tabla `super_admins` — el dueño
+  del negocio puede crear empresas nuevas desde la pantalla de selección de
+  empresa, sin tocar la base de datos a mano cada vez.
+- **`017_abonos.sql`**: tabla `sale_payments` — una venta en Pre-venta o
+  Crédito puede ir recibiendo abonos parciales sin perder de vista cuánto
+  queda pendiente; si los abonos completan el total, la venta pasa sola a
+  Pagado. `register_sale_payment` (cualquier miembro) y
+  `update_sale_payment` (solo administrador, para corregir un abono ya
+  cargado).
+- **`018_marcar_credito.sql`**: `mark_sale_credito(sale_id)` pasa una venta
+  de Pre-venta o Pagado a Crédito — para corregir una venta que se guardó
+  con el estado equivocado. Mismo criterio que `mark_sale_paid` y
+  `revert_sale_to_pre_venta`: cualquier miembro de la empresa, no toca
+  stock ni abonos ya cargados.
 
 ## Variables de entorno del frontend
 

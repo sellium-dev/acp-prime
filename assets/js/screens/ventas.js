@@ -59,7 +59,7 @@ export function renderVentas( main, ctx ) {
 	let editingSaleId = null; // venta cuyo cliente/precios se están corrigiendo
 	let abonandoSaleId = null; // venta a la que se le está por registrar un abono
 	let editingPaymentId = null; // abono ya cargado que se está corrigiendo
-	let processingSaleId = null; // venta con un cambio de estado (marcar pagado/anular/revertir) en curso
+	let processingKey = null; // "<saleId>:<accion>" en curso — para saber qué botón, no solo qué venta
 	let range = [ 'mes', 'todos' ].includes( ctx.navParams?.range ) ? ctx.navParams.range : 'hoy';
 	// Acepta un estado solo ("anulado") o varios ("Por cobrar" = pre_venta +
 	// credito) — siempre se normaliza a un array (o null si no aplica).
@@ -273,6 +273,7 @@ export function renderVentas( main, ctx ) {
 						const pending = 'pre_venta' === s.status || 'credito' === s.status;
 						const voidable = 'anulado' !== s.status;
 						const revertible = 'pagado' === s.status;
+						const canMarkCredito = 'pre_venta' === s.status || 'pagado' === s.status;
 						const isEditing = editingSaleId === s.id;
 						const isAbonando = abonandoSaleId === s.id;
 						const paid = paidAmount( s );
@@ -304,10 +305,11 @@ export function renderVentas( main, ctx ) {
 									? `
 								<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
 									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-abonar="${ s.id }" ${ saving ? 'disabled' : '' }>Abonar</button>` : '' }
-									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving && processingSaleId === s.id ? 'Marcando…' : 'Marcar pagado' }</button>` : '' }
-									${ revertible ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-revert-pre-venta="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving && processingSaleId === s.id ? 'Revirtiendo…' : 'Marcar como pre-venta' }</button>` : '' }
+									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }" ${ saving ? 'disabled' : '' }>${ processingKey === `${ s.id }:pagado` ? 'Marcando…' : 'Marcar pagado' }</button>` : '' }
+									${ revertible ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-revert-pre-venta="${ s.id }" ${ saving ? 'disabled' : '' }>${ processingKey === `${ s.id }:pre_venta` ? 'Revirtiendo…' : 'Marcar como pre-venta' }</button>` : '' }
+									${ canMarkCredito ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-credito="${ s.id }" ${ saving ? 'disabled' : '' }>${ processingKey === `${ s.id }:credito` ? 'Marcando…' : 'Marcar como crédito' }</button>` : '' }
 									${ isAdmin ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-edit-sale="${ s.id }" ${ saving ? 'disabled' : '' }>Editar venta</button>` : '' }
-									${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving && processingSaleId === s.id ? 'Anulando…' : 'Anular' }</button>` : '' }
+									${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }" ${ saving ? 'disabled' : '' }>${ processingKey === `${ s.id }:anular` ? 'Anulando…' : 'Anular' }</button>` : '' }
 								</div>
 							`
 									: ''
@@ -474,6 +476,9 @@ export function renderVentas( main, ctx ) {
 		main.querySelectorAll( '[data-revert-pre-venta]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => handleRevertToPreVenta( btn.dataset.revertPreVenta ) );
 		} );
+		main.querySelectorAll( '[data-mark-credito]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleMarkCredito( btn.dataset.markCredito ) );
+		} );
 		main.querySelectorAll( '[data-void]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => handleVoidSale( btn.dataset.void ) );
 		} );
@@ -618,13 +623,13 @@ export function renderVentas( main, ctx ) {
 		errorMsg = '';
 		successMsg = '';
 		saving = true;
-		processingSaleId = saleId;
+		processingKey = `${ saleId }:pagado`;
 		draw();
 
 		const { error } = await supabase.rpc( 'mark_sale_paid', { p_sale_id: saleId } );
 
 		saving = false;
-		processingSaleId = null;
+		processingKey = null;
 
 		if ( error ) {
 			errorMsg = 'No se pudo marcar como pagada: ' + error.message;
@@ -632,6 +637,31 @@ export function renderVentas( main, ctx ) {
 			return;
 		}
 		successMsg = 'Venta marcada como pagada.';
+		await loadSales();
+		draw();
+	}
+
+	// Para corregir una venta que se guardó como Pre-venta o Pagado cuando
+	// en realidad era Crédito — no toca stock ni abonos ya cargados, solo
+	// el estado (igual que mark_sale_paid / revert_sale_to_pre_venta).
+	async function handleMarkCredito( saleId ) {
+		errorMsg = '';
+		successMsg = '';
+		saving = true;
+		processingKey = `${ saleId }:credito`;
+		draw();
+
+		const { error } = await supabase.rpc( 'mark_sale_credito', { p_sale_id: saleId } );
+
+		saving = false;
+		processingKey = null;
+
+		if ( error ) {
+			errorMsg = 'No se pudo marcar como crédito: ' + error.message;
+			draw();
+			return;
+		}
+		successMsg = 'Venta marcada como crédito.';
 		await loadSales();
 		draw();
 	}
@@ -702,13 +732,13 @@ export function renderVentas( main, ctx ) {
 		errorMsg = '';
 		successMsg = '';
 		saving = true;
-		processingSaleId = saleId;
+		processingKey = `${ saleId }:pre_venta`;
 		draw();
 
 		const { error } = await supabase.rpc( 'revert_sale_to_pre_venta', { p_sale_id: saleId } );
 
 		saving = false;
-		processingSaleId = null;
+		processingKey = null;
 
 		if ( error ) {
 			errorMsg = 'No se pudo pasar a pre-venta: ' + error.message;
@@ -726,13 +756,13 @@ export function renderVentas( main, ctx ) {
 		errorMsg = '';
 		successMsg = '';
 		saving = true;
-		processingSaleId = saleId;
+		processingKey = `${ saleId }:anular`;
 		draw();
 
 		const { error } = await supabase.rpc( 'void_sale', { p_sale_id: saleId } );
 
 		saving = false;
-		processingSaleId = null;
+		processingKey = null;
 
 		if ( error ) {
 			errorMsg = 'No se pudo anular la venta: ' + error.message;
