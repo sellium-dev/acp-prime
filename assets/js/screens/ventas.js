@@ -59,6 +59,7 @@ export function renderVentas( main, ctx ) {
 	let editingSaleId = null; // venta cuyo cliente/precios se están corrigiendo
 	let abonandoSaleId = null; // venta a la que se le está por registrar un abono
 	let editingPaymentId = null; // abono ya cargado que se está corrigiendo
+	let processingSaleId = null; // venta con un cambio de estado (marcar pagado/anular/revertir) en curso
 	let range = [ 'mes', 'todos' ].includes( ctx.navParams?.range ) ? ctx.navParams.range : 'hoy';
 	// Acepta un estado solo ("anulado") o varios ("Por cobrar" = pre_venta +
 	// credito) — siempre se normaliza a un array (o null si no aplica).
@@ -302,11 +303,11 @@ export function renderVentas( main, ctx ) {
 									: pending || voidable || revertible || isAdmin
 									? `
 								<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-abonar="${ s.id }">Abonar</button>` : '' }
-									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }">Marcar pagado</button>` : '' }
-									${ revertible ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-revert-pre-venta="${ s.id }">Marcar como pre-venta</button>` : '' }
-									${ isAdmin ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-edit-sale="${ s.id }">Editar venta</button>` : '' }
-									${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }">Anular</button>` : '' }
+									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-abonar="${ s.id }" ${ saving ? 'disabled' : '' }>Abonar</button>` : '' }
+									${ pending ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-mark-paid="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving && processingSaleId === s.id ? 'Marcando…' : 'Marcar pagado' }</button>` : '' }
+									${ revertible ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-revert-pre-venta="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving && processingSaleId === s.id ? 'Revirtiendo…' : 'Marcar como pre-venta' }</button>` : '' }
+									${ isAdmin ? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 12px;font-size:12px" data-edit-sale="${ s.id }" ${ saving ? 'disabled' : '' }>Editar venta</button>` : '' }
+									${ voidable ? `<button type="button" style="background:none;border:none;color:oklch(0.65 0.18 25);cursor:pointer;font-size:12px" data-void="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving && processingSaleId === s.id ? 'Anulando…' : 'Anular' }</button>` : '' }
 								</div>
 							`
 									: ''
@@ -362,7 +363,7 @@ export function renderVentas( main, ctx ) {
 					<input id="ab-amount" type="number" min="0" step="1" placeholder="0" style="padding:9px 10px;width:160px" />
 				</div>
 				<button type="button" class="acp-btn-primary" style="width:auto;padding:9px 16px;font-size:13px" data-save-abono="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving ? 'Guardando…' : 'Confirmar abono' }</button>
-				<button type="button" class="acp-btn-secondary" style="width:auto;padding:9px 16px;font-size:13px" data-cancel-abono>Cancelar</button>
+				<button type="button" class="acp-btn-secondary" style="width:auto;padding:9px 16px;font-size:13px" data-cancel-abono ${ saving ? 'disabled' : '' }>Cancelar</button>
 			</div>
 		`;
 	}
@@ -403,7 +404,7 @@ export function renderVentas( main, ctx ) {
 					.join( '' ) }
 				<div style="display:flex;gap:8px;margin-top:4px">
 					<button type="button" class="acp-btn-primary" style="width:auto;padding:8px 16px;font-size:13px" data-save-sale="${ s.id }" ${ saving ? 'disabled' : '' }>${ saving ? 'Guardando…' : 'Guardar cambios' }</button>
-					<button type="button" class="acp-btn-secondary" style="width:auto;padding:8px 16px;font-size:13px" data-cancel-edit-sale>Cancelar</button>
+					<button type="button" class="acp-btn-secondary" style="width:auto;padding:8px 16px;font-size:13px" data-cancel-edit-sale ${ saving ? 'disabled' : '' }>Cancelar</button>
 				</div>
 			</div>
 		`;
@@ -616,7 +617,15 @@ export function renderVentas( main, ctx ) {
 	async function handleMarkPaid( saleId ) {
 		errorMsg = '';
 		successMsg = '';
+		saving = true;
+		processingSaleId = saleId;
+		draw();
+
 		const { error } = await supabase.rpc( 'mark_sale_paid', { p_sale_id: saleId } );
+
+		saving = false;
+		processingSaleId = null;
+
 		if ( error ) {
 			errorMsg = 'No se pudo marcar como pagada: ' + error.message;
 			draw();
@@ -692,7 +701,15 @@ export function renderVentas( main, ctx ) {
 
 		errorMsg = '';
 		successMsg = '';
+		saving = true;
+		processingSaleId = saleId;
+		draw();
+
 		const { error } = await supabase.rpc( 'revert_sale_to_pre_venta', { p_sale_id: saleId } );
+
+		saving = false;
+		processingSaleId = null;
+
 		if ( error ) {
 			errorMsg = 'No se pudo pasar a pre-venta: ' + error.message;
 			draw();
@@ -708,7 +725,15 @@ export function renderVentas( main, ctx ) {
 
 		errorMsg = '';
 		successMsg = '';
+		saving = true;
+		processingSaleId = saleId;
+		draw();
+
 		const { error } = await supabase.rpc( 'void_sale', { p_sale_id: saleId } );
+
+		saving = false;
+		processingSaleId = null;
+
 		if ( error ) {
 			errorMsg = 'No se pudo anular la venta: ' + error.message;
 			draw();
