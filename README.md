@@ -154,6 +154,10 @@ que ya existe.
   con el estado equivocado. Mismo criterio que `mark_sale_paid` y
   `revert_sale_to_pre_venta`: cualquier miembro de la empresa, no toca
   stock ni abonos ya cargados.
+- **`019_eliminar_carga_vacia.sql`**: `delete_empty_purchase(purchase_id)`
+  elimina una carga solo si ningún lote de stock la referencia (nunca toca
+  stock, ventas ni abonos). Solo administrador. Se usa desde Configuración →
+  Cargas, donde una carga con stock adentro aparece sin botón de eliminar.
 
 ## Variables de entorno del frontend
 

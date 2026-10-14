@@ -8,7 +8,7 @@ import { renderProductos } from './screens/productos.js?v=18';
 import { renderVentas } from './screens/ventas.js?v=20';
 import { renderVentasResumen } from './screens/ventas-resumen.js?v=6';
 import { renderDashboard } from './screens/dashboard.js?v=16';
-import { renderConfiguracion } from './screens/configuracion.js?v=4';
+import { renderConfiguracion } from './screens/configuracion.js?v=5';
 import { renderGastos } from './screens/gastos.js?v=4';
 import { renderAnalitica } from './screens/analitica.js?v=15';
 

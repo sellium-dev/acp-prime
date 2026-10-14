@@ -16,10 +16,13 @@ export function renderConfiguracion( main, ctx ) {
 	let saving = false;
 	let errorMsg = '';
 	let successMsg = '';
-	let activeTab = 'usuarios'; // 'usuarios' | 'permisos' | 'precios'
+	let activeTab = 'usuarios'; // 'usuarios' | 'permisos' | 'precios' | 'cargas'
 	let selectedVendorId = null;
 	let savingPermission = null; // key del toggle que está guardando ahora mismo
 	let savingMargin = false;
+	let cargas = null; // null = todavía no se cargó la pestaña "Cargas"
+	let loadingCargas = false;
+	let deletingCargaId = null;
 
 	load();
 
@@ -63,7 +66,9 @@ export function renderConfiguracion( main, ctx ) {
 						? permissionsSectionHtml()
 						: 'precios' === activeTab
 							? precioSectionHtml()
-							: membersSectionHtml()
+							: 'cargas' === activeTab
+								? cargasSectionHtml()
+								: membersSectionHtml()
 					: '<div class="acp-empty-state">No hay ajustes disponibles para tu rol.</div>'
 			}
 		`;
@@ -74,6 +79,8 @@ export function renderConfiguracion( main, ctx ) {
 				wirePermissionsSection();
 			} else if ( 'precios' === activeTab ) {
 				wirePrecioSection();
+			} else if ( 'cargas' === activeTab ) {
+				wireCargasSection();
 			} else {
 				wireMembersSection();
 			}
@@ -85,9 +92,10 @@ export function renderConfiguracion( main, ctx ) {
 			[ 'usuarios', 'Usuarios' ],
 			[ 'permisos', 'Permisos' ],
 			[ 'precios', 'Precios' ],
+			[ 'cargas', 'Cargas' ],
 		];
 		return `
-			<div style="display:flex;gap:4px;margin-bottom:24px;background:var(--input-bg);border-radius:9px;padding:3px;max-width:320px">
+			<div style="display:flex;gap:4px;margin-bottom:24px;background:var(--input-bg);border-radius:9px;padding:3px;max-width:440px">
 				${ tabs
 					.map(
 						( [ id, label ] ) => `
@@ -151,11 +159,148 @@ export function renderConfiguracion( main, ctx ) {
 		draw();
 	}
 
+	// Misma agrupación y numeración de "Carga N" que Analítica y Productos
+	// (por purchase_id, cronológico, solo cuentan las que tienen stock) — así
+	// "Carga 4" acá es la misma Carga 4 que se ve en esas pantallas. Una carga
+	// sin ningún lote no aparece en ellas; acá sí, como "Carga vacía", porque
+	// es justo la única que se puede eliminar.
+	async function loadCargas() {
+		loadingCargas = true;
+		errorMsg = '';
+		draw();
+
+		const [ purchasesRes, lotsRes ] = await Promise.all( [
+			supabase.from( 'stock_purchases' ).select( 'id, created_at' ).eq( 'organization_id', org.id ),
+			supabase
+				.from( 'stock_lots' )
+				.select( 'id, purchase_id, quantity, remaining_quantity, created_at, product_variants ( products ( name ) ), stock_purchases ( created_at ) ' )
+				.eq( 'organization_id', org.id ),
+		] );
+
+		loadingCargas = false;
+
+		if ( purchasesRes.error || lotsRes.error ) {
+			errorMsg = 'No se pudieron cargar las cargas: ' + ( purchasesRes.error || lotsRes.error ).message;
+			cargas = [];
+			draw();
+			return;
+		}
+
+		const groups = new Map();
+		( lotsRes.data || [] ).forEach( ( l ) => {
+			const key = l.purchase_id || `lote-${ l.id }`;
+			if ( ! groups.has( key ) ) {
+				groups.set( key, {
+					id: l.purchase_id,
+					createdAt: l.stock_purchases?.created_at || l.created_at,
+					lotCount: 0,
+					bought: 0,
+					remaining: 0,
+					products: new Set(),
+				} );
+			}
+			const g = groups.get( key );
+			g.lotCount += 1;
+			g.bought += l.quantity;
+			g.remaining += l.remaining_quantity;
+			g.products.add( l.product_variants?.products?.name || 'Producto' );
+		} );
+
+		const withStock = Array.from( groups.values() ).sort( ( a, b ) => new Date( a.createdAt ) - new Date( b.createdAt ) );
+		withStock.forEach( ( g, i ) => {
+			g.label = `Carga ${ i + 1 }`;
+			g.empty = false;
+		} );
+
+		const usedIds = new Set( withStock.map( ( g ) => g.id ).filter( Boolean ) );
+		const empties = ( purchasesRes.data || [] )
+			.filter( ( p ) => ! usedIds.has( p.id ) )
+			.map( ( p ) => ( { id: p.id, createdAt: p.created_at, label: 'Carga vacía', empty: true, lotCount: 0, bought: 0, remaining: 0, products: new Set() } ) );
+
+		cargas = [ ...withStock, ...empties ].sort( ( a, b ) => new Date( a.createdAt ) - new Date( b.createdAt ) );
+		draw();
+	}
+
+	function cargasSectionHtml() {
+		if ( loadingCargas || null === cargas ) {
+			return '<div class="acp-empty-state">Cargando…</div>';
+		}
+
+		return `
+			<div style="font-size:15px;font-weight:700;margin-bottom:6px">Cargas de stock</div>
+			<div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;max-width:560px">
+				Una carga solo se puede eliminar si no tiene ningún producto/stock dentro. Si una carga quedó con algo adentro por error, primero hay que sacar ese contenido; después aparece como "Carga vacía" y se puede eliminar.
+			</div>
+			<div style="display:flex;flex-direction:column;gap:10px;max-width:720px">
+				${
+					0 === cargas.length
+						? '<div class="acp-empty-state">Todavía no hay cargas.</div>'
+						: cargas.map( cargaRowHtml ).join( '' )
+				}
+			</div>
+		`;
+	}
+
+	function cargaRowHtml( c ) {
+		const names = Array.from( c.products );
+		const busy = null !== deletingCargaId;
+		return `
+			<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
+				<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+					<div style="font-size:14px;font-weight:700">${ esc( c.label ) } <span style="font-weight:400;color:var(--text-muted)">· ${ formatDate( c.createdAt ) }</span></div>
+					${
+						c.empty
+							? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 14px;font-size:12px;color:oklch(0.65 0.18 25)" data-delete-carga="${ c.id }" ${ busy ? 'disabled' : '' }>${ deletingCargaId === c.id ? 'Eliminando…' : 'Eliminar carga' }</button>`
+							: '<span style="font-size:11px;color:var(--text-muted)">No se puede eliminar: tiene stock adentro</span>'
+					}
+				</div>
+				${
+					c.empty
+						? '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">Sin productos ni stock.</div>'
+						: `<div style="font-size:12px;color:var(--text-muted);margin-top:6px">${ names.length } ${ 1 === names.length ? 'producto' : 'productos' } · ${ c.lotCount } ${ 1 === c.lotCount ? 'variante' : 'variantes' } · ${ c.bought } uds compradas · ${ c.remaining } en stock · ${ c.bought - c.remaining } vendidas</div>
+						<div style="font-size:12px;margin-top:4px">${ esc( names.join( ', ' ) ) }</div>`
+				}
+			</div>
+		`;
+	}
+
+	function wireCargasSection() {
+		main.querySelectorAll( '[data-delete-carga]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleDeleteCarga( btn.dataset.deleteCarga ) );
+		} );
+	}
+
+	async function handleDeleteCarga( purchaseId ) {
+		if ( ! window.confirm( 'Esto elimina la carga vacía de forma permanente. ¿Confirmas?' ) ) return;
+
+		deletingCargaId = purchaseId;
+		errorMsg = '';
+		successMsg = '';
+		draw();
+
+		const { error } = await supabase.rpc( 'delete_empty_purchase', { p_purchase_id: purchaseId } );
+
+		deletingCargaId = null;
+
+		if ( error ) {
+			errorMsg = 'No se pudo eliminar la carga: ' + error.message;
+			draw();
+			return;
+		}
+
+		successMsg = 'Carga eliminada.';
+		await loadCargas();
+	}
+
 	function wireTabs() {
 		main.querySelectorAll( '[data-tab]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => {
 				activeTab = btn.dataset.tab;
 				errorMsg = '';
+				if ( 'cargas' === activeTab ) {
+					loadCargas();
+					return;
+				}
 				draw();
 			} );
 		} );
@@ -444,6 +589,13 @@ export function renderConfiguracion( main, ctx ) {
 		successMsg = 'Usuario agregado.';
 		await load();
 	}
+}
+
+function formatDate( isoString ) {
+	const d = new Date( isoString );
+	const dd = String( d.getDate() ).padStart( 2, '0' );
+	const mm = String( d.getMonth() + 1 ).padStart( 2, '0' );
+	return `${ dd }-${ mm }-${ d.getFullYear() }`;
 }
 
 function capitalize( str ) {
