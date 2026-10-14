@@ -179,8 +179,7 @@ export function renderAnalitica( main, ctx ) {
 
 	// Agrupa los lotes por carga (una compra puede traer varios
 	// productos/tallas a la vez) — "Carga N" se numera por orden cronológico
-	// real, pero la lista se muestra ordenada por % recuperado igual que los
-	// lotes sueltos.
+	// real, y la lista se muestra en ese mismo orden (Carga 1, 2, 3…).
 	function buildPurchases() {
 		const groups = new Map();
 		lots.forEach( ( l ) => {
@@ -224,11 +223,8 @@ export function renderAnalitica( main, ctx ) {
 				recoveredPct,
 				pendingPct: Math.round( combinedPct ) - recoveredPct,
 				recoveredPctLabel: invested > 0 ? Math.min( 100, Math.round( ( recovered / invested ) * 100 ) ) : 0,
-				sortPct: invested > 0 ? ( recovered + pending ) / invested : 0,
 			};
 		} );
-
-		purchases.sort( ( a, b ) => b.sortPct - a.sortPct );
 	}
 
 	// Ganancia neta (ventas Pagado menos gastos) por mes, últimos

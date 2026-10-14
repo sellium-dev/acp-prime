@@ -134,9 +134,8 @@ que ya existe.
   producto nuevo con varias tallas, o una reposición de varios productos a
   la vez, crea una sola carga para todo ese guardado. Analítica en Lotes de
   stock ahora muestra una barra resumen por carga ("Carga 1", "Carga 2", …,
-  numeradas por fecha real, listadas de más cerca del 100% recuperado a
-  menos) y, al hacer clic, despliega el detalle de cada producto/talla que
-  trajo esa compra.
+  numeradas por fecha real y listadas en ese mismo orden) y, al hacer clic,
+  despliega el detalle de cada producto/talla que trajo esa compra.
 - **`015_fecha_lote1_correcta.sql`**: corrige la fecha del "Lote 1" — la
   `013` la fechó "viernes 28 de octubre", pero esa fecha cae miércoles; el
   28 de agosto sí cae viernes, así que el mes correcto era agosto. Ajusta
