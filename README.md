@@ -158,6 +158,10 @@ que ya existe.
   elimina una carga solo si ningún lote de stock la referencia (nunca toca
   stock, ventas ni abonos). Solo administrador. Se usa desde Configuración →
   Cargas, donde una carga con stock adentro aparece sin botón de eliminar.
+- **`020_fusionar_cargas.sql`**: `merge_purchases(source_id, target_id)` mueve
+  todos los lotes de una carga a otra (que conserva su fecha) y elimina la
+  carga de origen, en una sola operación. Solo administrador, misma empresa.
+  Las ventas no se tocan. Se usa desde Configuración → Cargas → "Fusionar".
 
 ## Variables de entorno del frontend
 

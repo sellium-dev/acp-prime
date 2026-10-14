@@ -23,6 +23,7 @@ export function renderConfiguracion( main, ctx ) {
 	let cargas = null; // null = todavía no se cargó la pestaña "Cargas"
 	let loadingCargas = false;
 	let deletingCargaId = null;
+	let mergingCargaId = null;
 
 	load();
 
@@ -243,7 +244,13 @@ export function renderConfiguracion( main, ctx ) {
 
 	function cargaRowHtml( c ) {
 		const names = Array.from( c.products );
-		const busy = null !== deletingCargaId;
+		const busy = null !== deletingCargaId || null !== mergingCargaId;
+		// Destinos posibles para fusionar: cualquier otra carga real con stock.
+		// Viene preseleccionada la carga anterior (por fecha), que es la que
+		// casi siempre se quiere cuando una compra se guardó partida en dos.
+		const targets = cargas.filter( ( x ) => x.id && ! x.empty && x.id !== c.id );
+		const idx = cargas.indexOf( c );
+		const defaultTarget = [ ...targets ].reverse().find( ( x ) => cargas.indexOf( x ) < idx ) || targets[ 0 ];
 		return `
 			<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px">
 				<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
@@ -251,7 +258,7 @@ export function renderConfiguracion( main, ctx ) {
 					${
 						c.empty
 							? `<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 14px;font-size:12px;color:oklch(0.65 0.18 25)" data-delete-carga="${ c.id }" ${ busy ? 'disabled' : '' }>${ deletingCargaId === c.id ? 'Eliminando…' : 'Eliminar carga' }</button>`
-							: '<span style="font-size:11px;color:var(--text-muted)">No se puede eliminar: tiene stock adentro</span>'
+							: '<span style="font-size:11px;color:var(--text-muted)">No se puede eliminar: tiene stock adentro — se puede fusionar</span>'
 					}
 				</div>
 				${
@@ -259,6 +266,19 @@ export function renderConfiguracion( main, ctx ) {
 						? '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">Sin productos ni stock.</div>'
 						: `<div style="font-size:12px;color:var(--text-muted);margin-top:6px">${ names.length } ${ 1 === names.length ? 'producto' : 'productos' } · ${ c.lotCount } ${ 1 === c.lotCount ? 'variante' : 'variantes' } · ${ c.bought } uds compradas · ${ c.remaining } en stock · ${ c.bought - c.remaining } vendidas</div>
 						<div style="font-size:12px;margin-top:4px">${ esc( names.join( ', ' ) ) }</div>`
+				}
+				${
+					! c.empty && c.id && targets.length > 0
+						? `
+					<div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+						<span style="font-size:12px;color:var(--text-muted)">Fusionar en:</span>
+						<select data-merge-target="${ c.id }" ${ busy ? 'disabled' : '' } style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:6px 10px;color:var(--text);font-size:12px;font-family:inherit">
+							${ targets.map( ( t ) => `<option value="${ t.id }" ${ t === defaultTarget ? 'selected' : '' }>${ esc( t.label ) } · ${ formatDate( t.createdAt ) }</option>` ).join( '' ) }
+						</select>
+						<button type="button" class="acp-btn-secondary" style="width:auto;padding:6px 14px;font-size:12px" data-merge-carga="${ c.id }" ${ busy ? 'disabled' : '' }>${ mergingCargaId === c.id ? 'Fusionando…' : 'Fusionar' }</button>
+					</div>
+				`
+						: ''
 				}
 			</div>
 		`;
@@ -268,6 +288,43 @@ export function renderConfiguracion( main, ctx ) {
 		main.querySelectorAll( '[data-delete-carga]' ).forEach( ( btn ) => {
 			btn.addEventListener( 'click', () => handleDeleteCarga( btn.dataset.deleteCarga ) );
 		} );
+		main.querySelectorAll( '[data-merge-carga]' ).forEach( ( btn ) => {
+			btn.addEventListener( 'click', () => handleMergeCarga( btn.dataset.mergeCarga ) );
+		} );
+	}
+
+	// La carga origen pasa a ser parte de la destino (queda con la fecha de
+	// la destino) y se elimina. Las ventas no se tocan: siguen apuntando a
+	// los mismos lotes, solo cambia a qué carga pertenecen.
+	async function handleMergeCarga( sourceId ) {
+		const select = main.querySelector( `[data-merge-target="${ sourceId }"]` );
+		const targetId = select?.value;
+		const source = cargas.find( ( c ) => c.id === sourceId );
+		const target = cargas.find( ( c ) => c.id === targetId );
+		if ( ! source || ! target ) return;
+
+		const ok = window.confirm(
+			`Esto mueve todo el contenido de ${ source.label } a ${ target.label } (queda con la fecha ${ formatDate( target.createdAt ) }) y elimina ${ source.label }. Las ventas ya hechas no se tocan. Si la carga que se elimina no es la última, las cargas siguientes cambian de número. ¿Confirmas?`
+		);
+		if ( ! ok ) return;
+
+		mergingCargaId = sourceId;
+		errorMsg = '';
+		successMsg = '';
+		draw();
+
+		const { error } = await supabase.rpc( 'merge_purchases', { p_source_id: sourceId, p_target_id: targetId } );
+
+		mergingCargaId = null;
+
+		if ( error ) {
+			errorMsg = 'No se pudo fusionar: ' + error.message;
+			draw();
+			return;
+		}
+
+		successMsg = `${ source.label } fusionada en ${ target.label }.`;
+		await loadCargas();
 	}
 
 	async function handleDeleteCarga( purchaseId ) {
